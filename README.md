@@ -29,7 +29,7 @@ not hallucinated.</p>
 ## Quick start
 
 ```bash
-git clone <this-repo> && cd triage
+git clone https://github.com/ishaannk/triage.git && cd triage
 cp .env.example .env        # add the keys you have
 ./run.sh                    # venv + deps + server on :8000
 ```
