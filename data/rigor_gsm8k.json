@@ -1,0 +1,58 @@
+{
+  "dataset": "gsm8k",
+  "n": 90,
+  "small_model": "ministral-8b",
+  "big_model": "gpt-oss-120b",
+  "configs": {
+    "always_small": {
+      "n": 90,
+      "accuracy": 0.9333,
+      "accuracy_ci95": [
+        0.8778,
+        0.9778
+      ],
+      "mean_cost_usd": 2.34e-05,
+      "mean_cost_ci95": [
+        0.0,
+        0.0
+      ],
+      "total_cost_usd": 0.002106,
+      "escalation_rate": 0
+    },
+    "always_big": {
+      "n": 90,
+      "accuracy": 0.9111,
+      "accuracy_ci95": [
+        0.8444,
+        0.9667
+      ],
+      "mean_cost_usd": 0.00012162,
+      "mean_cost_ci95": [
+        0.0001,
+        0.0001
+      ],
+      "total_cost_usd": 0.010946,
+      "escalation_rate": 0
+    },
+    "svserve": {
+      "n": 90,
+      "accuracy": 0.5111,
+      "accuracy_ci95": [
+        0.4,
+        0.6111
+      ],
+      "mean_cost_usd": 0.00010355,
+      "mean_cost_ci95": [
+        0.0001,
+        0.0001
+      ],
+      "total_cost_usd": 0.009319,
+      "escalation_rate": 0.578
+    }
+  },
+  "headline": {
+    "cost_savings_vs_big_pct": 14.9,
+    "quality_recovered_pct": 100.0,
+    "svserve_escalation_rate": 0.578
+  }
+}
