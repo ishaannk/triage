@@ -183,6 +183,11 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
     small_id = pick_model(req)
     big_id = req.escalate_to or (get_model(small_id) or {}).get("escalate_to") or ecfg.get("default_target")
     big_valid = bool(big_id and get_model(big_id) and big_id != small_id)
+    if big_valid:
+        # Never escalate into the mock fallback (e.g. a paid model picked with
+        # no API key) — a fake escalation is worse than staying on the free lane.
+        from ..providers.registry import get_registry
+        big_valid = get_registry().resolve(big_id)[2] != "mock"
 
     # ---- Tier-L: long-context (orthogonal) ------------------------------- #
     system = req.system or "You are a helpful, accurate assistant. Think step by step when the question requires reasoning, then state the final answer."

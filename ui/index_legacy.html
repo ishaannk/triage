@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SV-Serve · Reliability-Aware Router</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#2b3444;
+    --text:#e6edf3; --muted:#8b949e; --accent:#4f9cff; --accent2:#3fb950;
+    --warn:#d29922; --danger:#f85149; --chip:#21262d;
+    --t0:#3fb950; --t1:#4f9cff; --t2:#d29922; --t3:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); font-size:14px; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 18px; border-bottom:1px solid var(--border);
+    background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  .logo { font-weight:700; font-size:16px; letter-spacing:.3px; }
+  .logo span { color:var(--accent); }
+  .sub { color:var(--muted); font-size:12px; }
+  .spacer { flex:1; }
+  select, button, input { font-family:inherit; font-size:13px; color:var(--text);
+    background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#03121f; font-weight:600; }
+  button.primary:hover { filter:brightness(1.08); }
+  button:disabled { opacity:.5; cursor:default; }
+  .pill { font-size:11px; padding:3px 8px; border-radius:999px; background:var(--chip); border:1px solid var(--border); }
+  .pill.on { color:var(--accent2); border-color:#1f4a2c; }
+  .pill.off { color:var(--muted); }
+  .tabs { display:flex; gap:6px; padding:10px 18px 0; border-bottom:1px solid var(--border); background:var(--panel); }
+  .tab { padding:8px 14px; border-radius:8px 8px 0 0; cursor:pointer; color:var(--muted); border:1px solid transparent; border-bottom:none; }
+  .tab.active { color:var(--text); background:var(--bg); border-color:var(--border); }
+  .view { display:none; }
+  .view.active { display:block; }
+
+  /* Chat layout */
+  .chat-wrap { display:grid; grid-template-columns: 1fr 380px; gap:0; height:calc(100vh - 108px); }
+  .messages { overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px; }
+  .msg { max-width:80%; padding:12px 14px; border-radius:12px; line-height:1.5; white-space:pre-wrap; }
+  .msg.user { align-self:flex-end; background:var(--accent); color:#03121f; }
+  .msg.bot { align-self:flex-start; background:var(--panel); border:1px solid var(--border); cursor:pointer; }
+  .msg.bot.selected { border-color:var(--accent); }
+  .msg.bot.pending { border-color:var(--warn); }
+  .msg .meta { margin-top:8px; font-size:11px; color:var(--muted); display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .composer { display:flex; gap:8px; padding:14px 18px; border-top:1px solid var(--border); background:var(--panel); }
+  .composer input { flex:1; }
+
+  /* Side panel */
+  .side { border-left:1px solid var(--border); background:var(--panel2); overflow-y:auto; padding:16px; }
+  .side h3 { margin:0 0 4px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; }
+  .tier-badge { display:inline-flex; align-items:center; gap:8px; font-weight:700; padding:6px 12px; border-radius:8px; }
+  .kv { display:flex; justify-content:space-between; margin:4px 0; font-size:12px; }
+  .kv .k { color:var(--muted); }
+  .sig { margin:10px 0; }
+  .sig .top { display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px; }
+  .bar { height:8px; border-radius:6px; background:var(--chip); overflow:hidden; }
+  .bar > i { display:block; height:100%; border-radius:6px; }
+  .flags { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .evidence { font-size:12px; color:var(--muted); border-left:2px solid var(--border); padding-left:8px; margin:6px 0; }
+  .empty { color:var(--muted); text-align:center; margin-top:40px; }
+
+  /* Tables */
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .best { color:var(--accent2); font-weight:700; }
+  .section { padding:20px; }
+  .headline { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .stat { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 18px; min-width:150px; }
+  .stat .n { font-size:22px; font-weight:700; }
+  .stat .l { color:var(--muted); font-size:12px; }
+  .muted { color:var(--muted); }
+  code { background:var(--chip); padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">SV<span>·</span>Serve</div>
+    <div class="sub">reliability-aware compute router</div>
+  </div>
+  <div class="spacer"></div>
+  <label class="sub">model</label>
+  <select id="modelSel" style="min-width:220px"></select>
+  <label class="pill"><input type="checkbox" id="autoPick" checked style="vertical-align:-2px"> auto-pick small</label>
+  <div id="providerPills" style="display:flex; gap:6px"></div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="chat">Chat</div>
+  <div class="tab" data-tab="bench">Benchmark</div>
+  <div class="tab" data-tab="telem">Telemetry</div>
+</div>
+
+<!-- CHAT -->
+<div class="view active" id="view-chat">
+  <div class="chat-wrap">
+    <div style="display:flex; flex-direction:column; min-height:0;">
+      <div class="messages" id="messages">
+        <div class="empty">Ask something. The router will pick a tier and show live reliability signals →</div>
+      </div>
+      <div class="composer">
+        <input id="input" placeholder="Ask a question…  (try: 'What is the capital of Australia?' or 'Who is the current president?')" />
+        <button class="primary" id="send">Send</button>
+      </div>
+    </div>
+    <div class="side" id="side">
+      <div class="empty">Select a reply to inspect its signals.</div>
+    </div>
+  </div>
+</div>
+
+<!-- BENCHMARK -->
+<div class="view section" id="view-bench">
+  <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px;">
+    <button class="primary" id="runBench">Run benchmark</button>
+    <span class="muted">Baseline1 (always-cheap) · Baseline2 (always-verify) · SV-Serve (adaptive)</span>
+    <span id="benchStatus" class="muted"></span>
+  </div>
+  <div id="benchOut"><div class="empty">Run the harness to see the cost-vs-quality trade-off table.</div></div>
+</div>
+
+<!-- TELEMETRY -->
+<div class="view section" id="view-telem">
+  <div style="display:flex; gap:10px; margin-bottom:16px;">
+    <button id="refreshTelem">Refresh</button>
+  </div>
+  <div id="telemOut"><div class="empty">No requests logged yet.</div></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, opts) => fetch(p, opts).then(r => r.json());
+const pct = x => (x*100).toFixed(0) + '%';
+const usd = x => '$' + (x||0).toFixed(6);
+const TIER_COLORS = ['--t0','--t1','--t2','--t3'];
+const SIGCOLOR = v => v < 0.34 ? 'var(--t0)' : v < 0.6 ? 'var(--t2)' : 'var(--t3)';
+let lastResponses = [];
+
+// ---- tabs ----
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $('#view-' + t.dataset.tab).classList.add('active');
+  if (t.dataset.tab === 'telem') loadTelem();
+});
+
+// ---- init: models + providers ----
+async function init() {
+  const data = await api('/models');
+  const sel = $('#modelSel');
+  sel.innerHTML = '';
+  data.models.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = `${m.label} · MMLU ${m.mmlu} · ${m.is_mock ? 'mock' : m.live_provider}`;
+    sel.appendChild(o);
+  });
+  const pills = $('#providerPills');
+  pills.innerHTML = '';
+  Object.entries(data.provider_status).forEach(([k,v]) => {
+    const s = document.createElement('span');
+    s.className = 'pill ' + (v ? 'on' : 'off');
+    s.textContent = k + (v ? ' ●' : ' ○');
+    pills.appendChild(s);
+  });
+}
+init();
+
+// ---- chat ----
+$('#send').onclick = send;
+$('#input').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+async function send() {
+  const text = $('#input').value.trim();
+  if (!text) return;
+  $('#input').value = '';
+  addMsg('user', text);
+  const btn = $('#send'); btn.disabled = true;
+  const thinking = addMsg('bot', '…thinking (routing, sampling signals)…');
+  try {
+    const body = {
+      message: text,
+      model: $('#autoPick').checked ? null : $('#modelSel').value,
+      auto_pick: $('#autoPick').checked,
+      max_signals: true
+    };
+    const resp = await api('/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    lastResponses.push(resp);
+    renderBotMsg(thinking, resp);
+    selectMsg(thinking, resp);
+  } catch (e) {
+    thinking.textContent = 'Error: ' + e;
+  } finally { btn.disabled = false; }
+}
+
+function addMsg(role, text) {
+  const empty = $('#messages .empty'); if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  $('#messages').appendChild(div);
+  $('#messages').scrollTop = 1e9;
+  return div;
+}
+
+function renderBotMsg(div, resp) {
+  const t = resp.route.tier;
+  div.className = 'msg bot' + (resp.status === 'PENDING_REVIEW' ? ' pending' : '');
+  div.innerHTML = '';
+  const body = document.createElement('div');
+  body.textContent = resp.answer;
+  div.appendChild(body);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML =
+    `<span class="tier-badge" style="background:var(${TIER_COLORS[t]});color:#03121f">T${t} ${resp.route.tier_name}</span>` +
+    `<span>${resp.model} · ${resp.provider}</span>` +
+    `<span>${resp.latency_ms} ms</span>` +
+    `<span>${usd(resp.cost.est_cost_usd)}</span>` +
+    (resp.route.long_context ? `<span class="pill">Tier-L</span>` : '') +
+    (resp.status === 'PENDING_REVIEW' ? `<span class="pill" style="color:var(--warn)">PENDING_REVIEW</span>` : '');
+  div.appendChild(meta);
+  div.onclick = () => selectMsg(div, resp);
+}
+
+function selectMsg(div, resp) {
+  document.querySelectorAll('.msg.bot').forEach(m => m.classList.remove('selected'));
+  div.classList.add('selected');
+  renderSide(resp);
+}
+
+function sigBar(label, v, invert) {
+  const shown = invert ? 1 - v : v;
+  const color = invert ? (v > 0.6 ? 'var(--t0)' : v > 0.34 ? 'var(--t2)' : 'var(--t3)') : SIGCOLOR(v);
+  return `<div class="sig"><div class="top"><span>${label}</span><span>${v.toFixed(3)}</span></div>
+    <div class="bar"><i style="width:${(v*100).toFixed(0)}%;background:${color}"></i></div></div>`;
+}
+
+function renderSide(resp) {
+  const s = resp.signals, r = resp.route;
+  const t = r.tier;
+  let html = `
+  <div class="card">
+    <h3>Route decision</h3>
+    <div style="margin:8px 0"><span class="tier-badge" style="background:var(${TIER_COLORS[t]});color:#03121f">Tier ${t} · ${r.tier_name}</span></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${r.reason}</div>
+    <div class="flags">
+      ${r.retrieved ? '<span class="pill on">retrieved</span>' : '<span class="pill off">no retrieval</span>'}
+      ${r.verified ? '<span class="pill on">verified</span>' : '<span class="pill off">no verify</span>'}
+      ${r.abstained ? '<span class="pill" style="color:var(--danger)">abstained</span>' : ''}
+      ${r.long_context ? '<span class="pill">Tier-L</span>' : ''}
+    </div>
+    <div class="kv" style="margin-top:8px"><span class="k">abstain risk</span><span>${s.detail?.abstain?.risk ?? r.abstain_risk} / ${s.detail?.abstain?.threshold ?? '—'}</span></div>
+    <div class="kv"><span class="k">elevated signals</span><span>${(s.detail?.abstain?.elevated_signals||[]).join(', ')||'none'}</span></div>
+  </div>
+
+  <div class="card">
+    <h3>Proxy signals (0–1)</h3>
+    ${sigBar('uncertainty U', s.uncertainty)}
+    ${sigBar('instability', s.instability)}
+    ${sigBar('contradiction', s.contradiction)}
+    ${sigBar('retrieval disagreement', s.retrieval_disagreement)}
+    ${sigBar('evidence sufficiency', s.evidence_sufficiency, true)}
+    <div class="muted" style="font-size:11px;margin-top:8px">U mode: ${s.detail?.uncertainty?.mode || '—'} · agreement: ${s.detail?.instability?.agreement ?? '—'}</div>
+  </div>
+
+  <div class="card">
+    <h3>Cost & latency</h3>
+    <div class="kv"><span class="k">latency</span><span>${resp.latency_ms} ms</span></div>
+    <div class="kv"><span class="k">TTFT</span><span>${resp.ttft_ms} ms</span></div>
+    <div class="kv"><span class="k">LLM calls</span><span>${resp.cost.llm_calls}</span></div>
+    <div class="kv"><span class="k">tokens in/out</span><span>${resp.cost.tokens_in} / ${resp.cost.tokens_out}</span></div>
+    <div class="kv"><span class="k">est. cost</span><span>${usd(resp.cost.est_cost_usd)}</span></div>
+  </div>`;
+
+  if (resp.evidence && resp.evidence.length) {
+    html += `<div class="card"><h3>Evidence (${resp.evidence.length})</h3>` +
+      resp.evidence.map(e => `<div class="evidence">[${e.score}] ${e.text}</div>`).join('') + `</div>`;
+  }
+  if (s.detail?.verify) {
+    html += `<div class="card"><h3>Verify pass</h3>
+      <div class="kv"><span class="k">verdict</span><span>${s.detail.verify.pass ? 'PASS' : 'FAIL'}</span></div>
+      <div class="muted" style="font-size:12px">${s.detail.verify.reason||''}</div></div>`;
+  }
+  $('#side').innerHTML = html;
+}
+
+// ---- benchmark ----
+$('#runBench').onclick = async () => {
+  const st = $('#benchStatus'); st.textContent = 'running… (each case runs 3 configs)';
+  $('#runBench').disabled = true;
+  try {
+    const body = $('#autoPick').checked ? {} : { model: $('#modelSel').value };
+    const res = await api('/benchmark', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    renderBench(res);
+    st.textContent = 'done · model: ' + res.model;
+  } catch (e) { st.textContent = 'error: ' + e; }
+  finally { $('#runBench').disabled = false; }
+};
+
+function renderBench(res) {
+  const c = res.configs;
+  const rows = [
+    ['Baseline1 · always-cheap', c.Baseline1_always_cheap],
+    ['Baseline2 · always-verify', c.Baseline2_always_verify],
+    ['SV-Serve · adaptive', c.SV_Serve_adaptive],
+  ];
+  const bestAcc = Math.max(...rows.map(r => r[1].accuracy));
+  const cheapCost = Math.min(...rows.map(r => r[1].total_cost_usd));
+  let html = `
+  <div class="headline">
+    <div class="stat"><div class="n">${res.headline.svserve_vs_alwaysverify_cost_savings_pct}%</div><div class="l">SV-Serve cost savings vs always-verify</div></div>
+    <div class="stat"><div class="n">${pct(res.headline.svserve_accuracy)}</div><div class="l">SV-Serve accuracy</div></div>
+    <div class="stat"><div class="n">${pct(res.headline.always_verify_accuracy)}</div><div class="l">always-verify accuracy</div></div>
+    <div class="stat"><div class="n">${pct(res.headline.always_cheap_accuracy)}</div><div class="l">always-cheap accuracy</div></div>
+  </div>
+  <table><thead><tr><th>Config</th><th class="num">Accuracy</th><th class="num">Total cost</th>
+    <th class="num">Avg tokens</th><th class="num">LLM calls</th><th class="num">Avg latency</th><th class="num">Abstains</th></tr></thead><tbody>`;
+  rows.forEach(([name, a]) => {
+    html += `<tr><td>${name}</td>
+      <td class="num ${a.accuracy===bestAcc?'best':''}">${pct(a.accuracy)}</td>
+      <td class="num ${a.total_cost_usd===cheapCost?'best':''}">${usd(a.total_cost_usd)}</td>
+      <td class="num">${a.avg_tokens}</td>
+      <td class="num">${a.total_llm_calls}</td>
+      <td class="num">${a.avg_latency_ms} ms</td>
+      <td class="num">${a.abstains}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  html += `<h3 class="muted" style="margin-top:24px">Per-case (1 = correct / correctly abstained)</h3>
+    <table><thead><tr><th>Question</th><th>Answerable</th><th class="num">cheap</th><th class="num">verify</th><th class="num">SV-Serve</th><th class="num">SV tier</th></tr></thead><tbody>`;
+  res.per_case.forEach(p => {
+    html += `<tr><td>${p.q}</td><td>${p.answerable?'yes':'trap'}</td>
+      <td class="num">${p.cheap}</td><td class="num">${p.verify}</td>
+      <td class="num ${p.svserve?'best':''}">${p.svserve}</td><td class="num">T${p.svserve_tier}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  $('#benchOut').innerHTML = html;
+}
+
+// ---- telemetry ----
+$('#refreshTelem').onclick = loadTelem;
+async function loadTelem() {
+  const d = await api('/telemetry?limit=50');
+  const s = d.summary;
+  let html = `<div class="headline">
+    <div class="stat"><div class="n">${s.requests}</div><div class="l">requests</div></div>
+    <div class="stat"><div class="n">${s.avg_latency_ms} ms</div><div class="l">avg latency</div></div>
+    <div class="stat"><div class="n">${usd(s.total_cost_usd)}</div><div class="l">total cost</div></div>
+    <div class="stat"><div class="n">${s.avg_uncertainty}</div><div class="l">avg U</div></div>
+    <div class="stat"><div class="n">${s.abstains}</div><div class="l">abstains</div></div>
+  </div>`;
+  html += `<div class="muted" style="margin-bottom:8px">tiers: ${s.by_tier.map(t=>`T${t.tier} ${t.name}: ${t.count}`).join(' · ')||'—'}</div>`;
+  html += `<table><thead><tr><th>Question</th><th>Model</th><th>Prov</th><th class="num">Tier</th>
+    <th class="num">U</th><th class="num">Inst</th><th class="num">Cost</th><th class="num">ms</th><th>Status</th></tr></thead><tbody>`;
+  d.recent.forEach(r => {
+    html += `<tr><td>${(r.question||'').slice(0,42)}</td><td>${r.model}</td><td>${r.provider}</td>
+      <td class="num">T${r.tier}</td><td class="num">${(r.u||0).toFixed(2)}</td>
+      <td class="num">${(r.instability||0).toFixed(2)}</td><td class="num">${usd(r.est_cost_usd)}</td>
+      <td class="num">${(r.latency_ms||0).toFixed(0)}</td>
+      <td>${r.status==='PENDING_REVIEW'?'<span class="pill" style="color:var(--warn)">review</span>':'ok'}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  $('#telemOut').innerHTML = d.recent.length ? html : '<div class="empty">No requests logged yet.</div>';
+}
+</script>
+</body>
+</html>

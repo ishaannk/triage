@@ -98,8 +98,14 @@ def learning() -> dict:
 
 
 # --- Static UI ------------------------------------------------------------- #
+# Landing page = the demo/story page; the chat app lives at /app.
 @app.get("/")
-def index() -> FileResponse:
+def landing() -> FileResponse:
+    return FileResponse(UI_DIR / "demo.html")
+
+
+@app.get("/app")
+def chat_app() -> FileResponse:
     return FileResponse(UI_DIR / "index.html")
 
 

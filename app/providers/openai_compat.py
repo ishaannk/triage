@@ -22,6 +22,11 @@ USER_OPENAI_KEY: contextvars.ContextVar[str] = contextvars.ContextVar(
 class OpenAICompatAdapter(ProviderAdapter):
     name = "openai_compat"
 
+    def available(self) -> bool:
+        # The OpenAI lane is usable if the server has a key OR the current
+        # request carries a browser-supplied (BYO) key.
+        return bool(self._effective_key())
+
     def _effective_key(self) -> str:
         # BYO key: a per-request user key (set by /chat) overrides the .env key
         # for the OpenAI provider only. Never logged, never persisted.

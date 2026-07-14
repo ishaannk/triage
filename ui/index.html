@@ -45,6 +45,8 @@
   select,.iconbtn{font-family:var(--font);font-size:13px;color:var(--ink);
     background:var(--surface);border:1px solid var(--outline);border-radius:999px;
     padding:8px 14px;cursor:pointer;transition:background .15s,border-color .15s}
+  header select{max-width:240px;text-overflow:ellipsis}
+  @media (max-width:980px){ header select{max-width:160px} .brand p{display:none} }
   select:hover,.iconbtn:hover{background:var(--surface-2);border-color:var(--ink-3)}
   .iconbtn{width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%}
   .iconbtn svg{width:20px;height:20px}
@@ -178,10 +180,11 @@
     <input type="password" id="setupKey" placeholder="sk-…  (OpenAI API key)" autocomplete="off">
     <div class="hint">Your key is stored in this browser only and attached per request.
       It is never saved on our servers or shown in logs. Open-source models need no key.</div>
+    <div class="hint" id="setupWarn" style="display:none;color:#d93025;font-weight:600"></div>
 
     <div class="row">
       <button class="primary" id="setupGo">Start chatting</button>
-      <a class="ghost" href="/ui/demo.html" target="_blank">View the live cost demo ↗</a>
+      <a class="ghost" href="/">← Back to the story page</a>
     </div>
   </div>
 </div>
@@ -194,7 +197,6 @@
   </div>
   <div class="spacer"></div>
   <div class="ctrl">
-    <a class="iconbtn" href="/ui/demo.html" style="text-decoration:none;font-weight:600;white-space:nowrap;flex:none">Live&nbsp;demo&nbsp;↗</a>
     <label class="toggle" title="Allow signal-driven small→large escalation">
       <input type="checkbox" id="escToggle" checked> escalation
     </label>
@@ -237,7 +239,7 @@
     <div class="subrow">
       <span class="dot"></span><span id="status">ready</span>
       <span>·</span><span>tokens + cost estimated per message</span>
-      <span>·</span><a class="link" href="/ui/demo.html" target="_blank">cost story ↗</a>
+      <span>·</span><a class="link" href="/">story page ↗</a>
       <span>·</span><a class="link" href="/learning" target="_blank">learned thresholds ↗</a>
     </div>
   </div>
@@ -290,7 +292,8 @@ async function loadModels(){
     sel.onchange=()=>{ state.small=sel.value;
       const e=(state.models[state.small]||{}).escalate_to;
       if(e && state.models[e]){ bsel.value=e; state.big=e; } refreshBigName(); };
-    bsel.onchange=()=>{ state.big=bsel.value; refreshBigName(); };
+    bsel.onchange=()=>{ state.big=bsel.value; refreshBigName();
+      if(state.guardBig) state.guardBig(); };
     refreshBigName();
     initSetup(d.models);
   }catch(e){ $('#status').textContent='could not load /models'; }
@@ -319,19 +322,35 @@ function initSetup(models){
   fill($('#setupBig'), byPower, localStorage.svBig || state.big);
   $('#setupKey').value = localStorage.svKey || '';
 
+  const isPaid = id => ((state.models[id]||{}).cost_out||0) > 0;
+  const warn = msg => { const w=$('#setupWarn'); w.textContent=msg; w.style.display=msg?'block':'none'; };
   const apply=()=>{
-    state.small=$('#setupSmall').value; state.big=$('#setupBig').value;
-    state.key=($('#setupKey').value||'').trim();
+    const big=$('#setupBig').value, key=($('#setupKey').value||'').trim();
+    // Guard: a paid hard-task model without an API key cannot work — block it.
+    if(isPaid(big) && !key){
+      warn(`${lbl(big)} is a paid model — paste your API key above, or pick a free hard-task model.`);
+      return;
+    }
+    warn('');
+    state.small=$('#setupSmall').value; state.big=big; state.key=key;
     localStorage.svSmall=state.small; localStorage.svBig=state.big;
     if(state.key) localStorage.svKey=state.key; else localStorage.removeItem('svKey');
     $('#modelSel').value=state.small; $('#bigSel').value=state.big;
     localStorage.svSetup='1'; refreshBigName();
     $('#setupOvl').classList.add('hidden');
   };
-  $('#setupGo').onclick=apply;
-  $('#setupBtn').onclick=()=>{ fill($('#setupSmall'),bySize,state.small);
+  const openSetup = msg => { fill($('#setupSmall'),bySize,state.small);
     fill($('#setupBig'),byPower,state.big); $('#setupKey').value=localStorage.svKey||'';
-    $('#setupOvl').classList.remove('hidden'); };
+    warn(msg||''); $('#setupOvl').classList.remove('hidden'); };
+  state.guardBig = () => {   // used by header dropdown + send()
+    if($('#escToggle').checked && isPaid(state.big) && !state.key){
+      openSetup(`${lbl(state.big)} is a paid model — add your API key to use it, or pick a free hard-task model.`);
+      return false;
+    }
+    return true;
+  };
+  $('#setupGo').onclick=apply;
+  $('#setupBtn').onclick=()=>openSetup();
   // restore saved choices; greet on first visit only
   if(localStorage.svSmall && models.some(m=>m.id===localStorage.svSmall)){
     state.small=localStorage.svSmall; $('#modelSel').value=state.small; }
@@ -373,6 +392,7 @@ function scrollDown(){$('#main').scrollTop=$('#main').scrollHeight;}
 
 async function send(){
   const text=input.value.trim(); if(!text) return;
+  if(state.guardBig && !state.guardBig()) return;   // paid big model needs a key
   input.value='';input.style.height='auto';addUser(text);
   sendBtn.disabled=true;$('#status').textContent='routing…';
   const t=addTyping();
