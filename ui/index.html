@@ -318,8 +318,12 @@ function initSetup(models){
     .sort((a,b)=>(a.cost_out||0)-(b.cost_out||0)||(a.size_b||999)-(b.size_b||999));
   const byPower=models.filter(m=>m.role==='big')
     .sort((a,b)=>(b.cost_out||0)-(a.cost_out||0)||(b.size_b||0)-(a.size_b||0));
+  // Keyless visitors default to a FREE hard-task model (no key wall on first
+  // click); a paid pick is one dropdown away and the guard explains the key.
+  const freeBig = byPower.find(m=>(m.cost_out||0)===0);
+  const defBig = localStorage.svBig || (localStorage.svKey ? state.big : (freeBig && freeBig.id) || state.big);
   fill($('#setupSmall'), bySize, localStorage.svSmall || state.small);
-  fill($('#setupBig'), byPower, localStorage.svBig || state.big);
+  fill($('#setupBig'), byPower, defBig);
   $('#setupKey').value = localStorage.svKey || '';
 
   const isPaid = id => ((state.models[id]||{}).cost_out||0) > 0;
@@ -357,6 +361,7 @@ function initSetup(models){
   if(localStorage.svBig && models.some(m=>m.id===localStorage.svBig)){
     state.big=localStorage.svBig; $('#bigSel').value=state.big; }
   state.key = localStorage.svKey || '';
+  if(!localStorage.svSetup && !state.key && freeBig){ state.big=freeBig.id; $('#bigSel').value=state.big; }
   refreshBigName();
   if(!localStorage.svSetup) $('#setupOvl').classList.remove('hidden');
 }
