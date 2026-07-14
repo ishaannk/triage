@@ -1,0 +1,26 @@
+# Fly.io config for Triage. Deploy:
+#   fly launch --no-deploy     (accepts this file; pick your app name/region)
+#   fly secrets set nvidia=nvapi-...          # free-lane key (required)
+#   fly deploy
+# Do NOT set OPENAI_API_KEY on a public demo — visitors bring their own key
+# through the UI; leaving it unset protects your OpenAI credit.
+
+app = "triage-router"
+primary_region = "bom"
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[env]
+  TELEMETRY_DB = "/app/data/telemetry.db"
+  RETRIEVAL_BACKEND = "local"
