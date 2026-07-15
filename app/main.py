@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .benchmark.harness import run_benchmark
 from .config import get_settings, load_models, load_router_config
+from .llm import RateLimitError
 from .providers.openai_compat import USER_OPENAI_KEY
 from .providers.registry import get_registry
 from .retrieval.store import get_store, store_info
@@ -56,12 +57,21 @@ def models() -> dict:
     return {"models": out, "provider_status": reg.status()}
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
+@app.post("/chat", response_model=None)
+async def chat(req: ChatRequest):
     if req.api_key:                       # BYO key: request-scoped, never persisted
         USER_OPENAI_KEY.set(req.api_key)
         req.api_key = None                # keep it out of telemetry/logs
-    resp, telem = await route_and_answer(req)
+    try:
+        resp, telem = await route_and_answer(req)
+    except RateLimitError as e:
+        return JSONResponse(status_code=429, content={
+            "error": "rate_limited", "provider": e.provider,
+            "retry_after_seconds": e.retry_after,
+            "message": ("The free model lane just hit the provider's rate limit "
+                        "(NVIDIA free tier allows ~40 requests/min). It resets in "
+                        "about a minute — please try again shortly."),
+        })
     db.log_request(telem)
     return resp
 

@@ -407,6 +407,15 @@ async function send(){
         api_key:state.key||null,
         allow_escalation:$('#escToggle').checked, max_signals:true})});
     const d=await resp.json(); t.remove();
+    if(resp.status===429){
+      const secs=d.retry_after_seconds;
+      const w=document.createElement('div');w.className='msg bot abstain';
+      const b=document.createElement('div');b.className='bubble';
+      b.textContent=`⏳ ${d.message||'The free lane is rate-limited.'}`+
+        (secs?` (resets in ~${secs}s)`:'');
+      w.appendChild(b);thread.appendChild(w);
+      sendBtn.disabled=false;$('#status').textContent='rate-limited — retry shortly';scrollDown();return;
+    }
     renderBot(d); updateMeter(d);
   }catch(e){ t.remove(); const w=document.createElement('div');w.className='msg bot abstain';
     const b=document.createElement('div');b.className='bubble';b.textContent='Request failed: '+e;w.appendChild(b);thread.appendChild(w); }

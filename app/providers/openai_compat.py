@@ -95,6 +95,12 @@ class OpenAICompatAdapter(ProviderAdapter):
                         f"{self.base_url}/chat/completions", json=payload, headers=headers
                     )
             latency = (time.perf_counter() - t0) * 1000
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("retry-after", "")
+                return GenResult(
+                    text="", provider=self.name, model=model, latency_ms=latency,
+                    error=f"RATE_LIMIT retry_after={retry_after}: {resp.text[:200]}",
+                )
             if resp.status_code >= 400:
                 return GenResult(
                     text="", provider=self.name, model=model, latency_ms=latency,
