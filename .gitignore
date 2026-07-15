@@ -25,3 +25,6 @@ image*.png
 logo.png
 Screenshot*.png
 data/mtbench_gpt5.json
+
+# research paper — local only, never push
+paper/
