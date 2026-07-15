@@ -28,3 +28,6 @@ data/mtbench_gpt5.json
 
 # research paper — local only, never push
 paper/
+
+# Claude session memory — local only
+CLAUDE_MEMORY.md
