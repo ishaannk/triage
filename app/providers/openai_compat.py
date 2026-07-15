@@ -113,6 +113,17 @@ class OpenAICompatAdapter(ProviderAdapter):
                 latency_ms=(time.perf_counter() - t0) * 1000, error=str(exc),
             )
 
+        # Some gateways (e.g. OpenRouter) return HTTP 200 with an error body and
+        # no `choices` — treat that as a provider error, never a crash.
+        if not data.get("choices"):
+            err = data.get("error") or {}
+            msg = err.get("message") if isinstance(err, dict) else str(err)
+            code = err.get("code") if isinstance(err, dict) else None
+            prefix = "RATE_LIMIT retry_after=: " if code in (429, "429") else ""
+            return GenResult(
+                text="", provider=self.name, model=model, latency_ms=latency,
+                error=f"{prefix}{msg or 'empty choices in response'}"[:300],
+            )
         choice = data["choices"][0]
         text = (choice.get("message") or {}).get("content", "") or ""
         usage = data.get("usage", {}) or {}
