@@ -320,7 +320,7 @@ function initSetup(models){
     .sort((a,b)=>(b.cost_out||0)-(a.cost_out||0)||(b.size_b||0)-(a.size_b||0));
   // Keyless visitors default to a FREE hard-task model (no key wall on first
   // click); a paid pick is one dropdown away and the guard explains the key.
-  const freeBig = byPower.find(m=>(m.cost_out||0)===0);
+  const freeBig = state.models['nemotron-super-49b'] || byPower.find(m=>(m.cost_out||0)===0);
   const defBig = localStorage.svBig || (localStorage.svKey ? state.big : (freeBig && freeBig.id) || state.big);
   fill($('#setupSmall'), bySize, localStorage.svSmall || state.small);
   fill($('#setupBig'), byPower, defBig);

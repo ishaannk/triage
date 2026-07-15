@@ -67,7 +67,7 @@ class OpenAICompatAdapter(ProviderAdapter):
         headers = {"Authorization": f"Bearer {self._effective_key()}"}
         t0 = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
+            async with httpx.AsyncClient(timeout=150.0) as client:
                 resp = await client.post(
                     f"{self.base_url}/chat/completions", json=payload, headers=headers
                 )

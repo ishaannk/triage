@@ -224,6 +224,16 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
     # burns ~5x the latency/cost for nothing).
     deep = req.max_signals and not fast_path and not prefiltered_to_big
     a = await _assess(start_client, req, cfg, crpa, deep)
+    # Pre-filter sent us straight to the big model and it FAILED (timeout/empty):
+    # fall back to the small model — a provider failure must never become an abstain.
+    pf_big_failed = False
+    if prefiltered_to_big and (_degenerate(a["answer"]) or start_client.provider_label == "mock"):
+        fb_client = LLMClient(small_id)
+        a_small = await _assess(fb_client, req, cfg, crpa, False)
+        if not _degenerate(a_small["answer"]) and fb_client.provider_label != "mock":
+            pf_big_failed = True
+            a = a_small
+            start_client = fb_client   # cost of the failed big call is ~0 tokens
     abstain_flag, risk, adetail = should_abstain(a["signals"], cfg["abstain"])
     rescued = a["verified"] and a["verify_pass"]
     would_abstain = abstain_flag and not rescued
@@ -248,8 +258,13 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
         # We spent big-model compute up front on a predicted-hard prompt (no small pass).
         escalated = True
         escalated_to = big_id
-        esc_detail.update({"triggered": True, "via": "prefilter", "to": big_id,
-                           "reason": "pre-filter predicted hard -> direct to big model"})
+        if pf_big_failed:
+            models_used = [big_id, small_id]
+            esc_detail.update({"triggered": True, "via": "prefilter", "to": big_id,
+                               "reason": "big model failed (timeout/empty) -> answered by the small model"})
+        else:
+            esc_detail.update({"triggered": True, "via": "prefilter", "to": big_id,
+                               "reason": "pre-filter predicted hard -> direct to big model"})
 
     # ---- Tier 3: signal-driven escalation small -> large ----------------- #
     elif escalation_on and big_valid and (would_abstain or force_escalate or risk >= learned_risk_high):
@@ -258,25 +273,34 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
         # decision (there is no bigger model). The degenerate-answer guard still catches
         # a big-model failure and abstains. This keeps escalation to ~1 big-model call.
         b = await _assess(big_client, req, cfg, crpa, False)
-        b_abstain, b_risk, b_adetail = should_abstain(b["signals"], cfg["abstain"])
-        b_rescued = b["verified"] and b["verify_pass"]
-        # Adopt the big model's answer + signals as the served result.
-        chosen = b
         clients.append(big_client)
         escalated = True
         escalated_to = big_id
         models_used.append(big_id)
-        abstain_flag, risk, adetail = b_abstain, b_risk, b_adetail
-        rescued = b_rescued
-        would_abstain = b_abstain and not b_rescued
-        why = ("small model returned no usable answer" if force_escalate
-               else "small-model risk high / would-abstain")
-        esc_detail.update({
-            "triggered": True, "via": "failure" if force_escalate else "signals",
-            "from": small_id, "to": big_id,
-            "small_risk": small_risk_val, "big_risk": b_risk,
-            "reason": f"{why} -> traded up to bigger model",
-        })
+        if (_degenerate(b["answer"]) or big_client.provider_label == "mock") and not _degenerate(a["answer"]):
+            # Big model failed (timeout/empty/mock-fallback) — keep the small
+            # model's answer rather than serving mock or abstaining.
+            esc_detail.update({
+                "triggered": True, "via": "failure", "from": small_id, "to": big_id,
+                "small_risk": small_risk_val,
+                "reason": "big model failed (timeout/empty) -> served the small model's answer",
+            })
+        else:
+            b_abstain, b_risk, b_adetail = should_abstain(b["signals"], cfg["abstain"])
+            b_rescued = b["verified"] and b["verify_pass"]
+            # Adopt the big model's answer + signals as the served result.
+            chosen = b
+            abstain_flag, risk, adetail = b_abstain, b_risk, b_adetail
+            rescued = b_rescued
+            would_abstain = b_abstain and not b_rescued
+            why = ("small model returned no usable answer" if force_escalate
+                   else "small-model risk high / would-abstain")
+            esc_detail.update({
+                "triggered": True, "via": "failure" if force_escalate else "signals",
+                "from": small_id, "to": big_id,
+                "small_risk": small_risk_val, "big_risk": b_risk,
+                "reason": f"{why} -> traded up to bigger model",
+            })
 
     # ---- Aggregate cost across every model touched ----------------------- #
     total = CostMetrics()
