@@ -264,9 +264,11 @@ async function loadModels(){
   try{
     const d = await (await fetch('/models')).json();
     const sel = $('#modelSel'), bsel = $('#bigSel');
-    // Curated catalog: hide UI-hidden + subscription-gated models (nothing a
-    // visitor picks should ever 403). Full catalog remains available via the API.
-    d.models = d.models.filter(m=>!m.hidden && !m.requires_subscription);
+    // Curated catalog: hide UI-hidden + subscription-gated models, and hide any
+    // FREE model whose provider is dead (mock) — nothing a visitor picks should
+    // ever answer with canned mock text. Paid models stay: a BYO key wakes them.
+    d.models = d.models.filter(m=>!m.hidden && !m.requires_subscription
+      && !(m.is_mock && (m.cost_out||0)===0));
     d.models.forEach(m=>{ state.models[m.id]=m; });
     const price = m => (m.cost_out||0)===0 ? 'free · open-source' : `$${m.cost_in}/${m.cost_out} per 1M`;
     // Two distinct lanes: role:"small" = everyday tasks, role:"big" = heavy tasks.

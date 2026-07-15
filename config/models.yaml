@@ -112,45 +112,6 @@ models:
     cost_out: 0.0
     context: 128000
 
-  - id: gemma2-2b
-    label: "Gemma 2 2B IT"
-    family: gemma
-    size_b: 2
-    provider: nvidia
-    role: small
-    provider_model: "google/gemma-2-2b-it"
-    mmlu: 51.3
-    gpqa: 24.0
-    cost_in: 0.0
-    cost_out: 0.0
-    context: 8192
-
-  - id: gemma3-12b
-    label: "Gemma 3 12B IT"
-    family: gemma
-    size_b: 12
-    provider: nvidia
-    role: small
-    provider_model: "google/gemma-3-12b-it"
-    mmlu: 74.5
-    gpqa: 34.5
-    cost_in: 0.0
-    cost_out: 0.0
-    context: 128000
-
-  - id: phi-4-mini
-    label: "Phi-4 Mini Instruct"
-    family: phi
-    size_b: 3.8
-    provider: nvidia
-    role: small
-    provider_model: "microsoft/phi-4-mini-instruct"
-    mmlu: 72.0
-    gpqa: 32.0
-    cost_in: 0.0
-    cost_out: 0.0
-    context: 128000
-
   - id: nemotron-super-49b
     label: "Nemotron Super 49B (NVIDIA)"
     family: nemotron
