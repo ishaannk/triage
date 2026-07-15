@@ -78,6 +78,7 @@ models:
     escalate_to: gpt-4o         # hard/risky tasks go to the paid strong model
     alt:
       groq: "llama-3.1-8b-instant"
+      openrouter: "meta-llama/llama-3.1-8b-instruct:free"
     mmlu: 69.4
     gpqa: 30.4
     cost_in: 0.0
@@ -93,6 +94,7 @@ models:
     provider_model: "meta/llama-3.3-70b-instruct"
     alt:
       groq: "llama-3.3-70b-versatile"
+      openrouter: "meta-llama/llama-3.3-70b-instruct:free"
     mmlu: 86.0
     gpqa: 50.5
     cost_in: 0.0
@@ -134,6 +136,36 @@ models:
     provider_model: "nvidia/nvidia-nemotron-nano-9b-v2"
     mmlu: 74.0
     gpqa: 36.0
+    cost_in: 0.0
+    cost_out: 0.0
+    context: 128000
+
+  # ================== OpenRouter (opt-in lane, self-hosters) =================
+  # `:free` variants are ~50 requests/DAY on OpenRouter's free tier — fine for
+  # personal use, never the public-demo default. These models self-hide in the
+  # UI when no `openrouter=` key is set (they resolve to mock and get filtered).
+  - id: deepseek-r1-free
+    label: "DeepSeek R1 (OpenRouter, free)"
+    family: deepseek
+    size_b: 671
+    provider: openrouter
+    role: big
+    provider_model: "deepseek/deepseek-r1:free"
+    mmlu: 90.0
+    gpqa: 71.0
+    cost_in: 0.0
+    cost_out: 0.0
+    context: 128000
+
+  - id: qwen-2.5-72b-free
+    label: "Qwen 2.5 72B (OpenRouter, free)"
+    family: qwen
+    size_b: 72
+    provider: openrouter
+    role: big
+    provider_model: "qwen/qwen-2.5-72b-instruct:free"
+    mmlu: 85.0
+    gpqa: 49.0
     cost_in: 0.0
     cost_out: 0.0
     context: 128000

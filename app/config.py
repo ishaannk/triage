@@ -37,6 +37,11 @@ class Settings:
         self.ollama_key = os.getenv("ollamacloud") or os.getenv("OLLAMA_API_KEY", "") or ""
         self.ollama_base = os.getenv("OLLAMA_BASE_URL", "https://ollama.com")
 
+        # OpenRouter (opt-in lane; `:free` models are ~50 req/DAY on the free tier,
+        # so it is never the public-demo default — NVIDIA's 40/min self-heals).
+        self.openrouter_key = os.getenv("openrouter") or os.getenv("OPENROUTER_API_KEY") or ""
+        self.openrouter_base = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
         self.hf_key = os.getenv("HF_API_KEY", "")
         self.hf_base = os.getenv("HF_BASE_URL", "https://api-inference.huggingface.co")
 
@@ -52,6 +57,7 @@ class Settings:
             "nvidia": bool(self.nvidia_key),
             "groq": bool(self.groq_key),
             "ollama": bool(self.ollama_key),
+            "openrouter": bool(self.openrouter_key),
             "huggingface": bool(self.hf_key),
         }
 

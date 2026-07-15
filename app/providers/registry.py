@@ -21,6 +21,9 @@ class ProviderRegistry:
             "openai": OpenAICompatAdapter("openai", s.openai_key, s.openai_base, supports_logprobs=True),
             "nvidia": OpenAICompatAdapter("nvidia", s.nvidia_key, s.nvidia_base, supports_logprobs=True),
             "groq": OpenAICompatAdapter("groq", s.groq_key, s.groq_base, supports_logprobs=True),
+            "openrouter": OpenAICompatAdapter(
+                "openrouter", s.openrouter_key, s.openrouter_base, supports_logprobs=False
+            ),
             # Ollama Cloud exposes an OpenAI-compatible endpoint at /v1 (verified live).
             # It does not return token logprobs, so proxy uncertainty falls back to
             # resample entropy (supports_logprobs=False).
