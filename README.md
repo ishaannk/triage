@@ -160,7 +160,7 @@ through the UI.
 
 ## Principles
 
-- **Black-box only** — logprobs + resampling; no weights, no attention hooks.
-- **Mock-first** — runs end-to-end with zero keys.
-- **All truth** — published numbers are measured bills with raw receipts
+- **Black-box only** : logprobs + resampling; no weights, no attention hooks.
+- **Mock-first** : runs end-to-end with zero keys.
+- **All truth** : published numbers are measured bills with raw receipts
   committed; negative results get reported, not buried.
