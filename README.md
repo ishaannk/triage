@@ -22,8 +22,9 @@ with bootstrap 95% CIs:
 
 | Result | Number | Where |
 |---|---|---|
-| MT-Bench, free Nemotron-Nano-9B → GPT-4o **(held-out)** | **82.0% saved** (CI 67–95%) at **101.2%** of GPT-4o quality (CI 96–108%), 6/40 escalated | `data/mtbench_nemotron_holdout.json` |
-| MT-Bench, free Ministral-8B → GPT-4o **(held-out)** | at the tuned threshold **0/40** test questions escalated → **~$0** at **99.4%** of GPT-4o quality (CI 93–105%) | `data/mtbench_gpt4o_holdout.json` |
+| MT-Bench, free Nemotron-Nano-9B → GPT-4o **(held-out, 5 seeds)** | **81.6% saved** (range 75.7–87.9%) at **103.1%** of GPT-4o quality (range 101.2–105.9%), 4–9/40 escalated | `data/mtbench_nemotron_holdout_multiseed.json` |
+| MT-Bench, free Ministral-8B → GPT-4o **(held-out, 5 seeds)** | **96.0% saved** (range 92–100%) at **98.4%** of GPT-4o quality (range 96.0–100.3%), 0–3/40 escalated | `data/mtbench_gpt4o_holdout_multiseed.json` |
+| GSM8K, gpt-4o-mini → GPT-4o **(5 seeds, CIs, significance)** | **85.1% saved** (CI 81.4–88.9%) at **≥ big-model accuracy** (triage 0.960 vs big 0.900, +0.06, *p*=0.017) | `data/rigor_gsm8k_multiseed.json` |
 | 30-query mixed live bill | **69.5% saved** ($0.0637 → $0.0195), 24/30 answers cost $0 | `data/showtime.json` |
 
 **Negative results (published on purpose — see `CHARTER.md`):**
@@ -80,24 +81,39 @@ request ─► calculator tool ── exact arithmetic → exact answer, $0, no 
               └ unanswerable → PENDING_REVIEW  (refuse, never confabulate)
 ```
 
-The decision is made **after observing the free model's actual answer** — not by
-guessing from the prompt. No router training, no preference data, no calibration
-per model pair: pick any two models in the UI and it works.
+The **primary** decision is made **after observing the free model's actual
+answer** — not guessed from the prompt. No offline preference-model training and
+no per-pair calibration: pick any two models in the UI and it works.
 
-Extras that keep it cheap and honest: expensive signals only fire when the free
-uncertainty signal is already elevated; a semantic memory skips probes on
-known-safe prompt clusters; an online learner keeps the escalation rate on
-target; `/anomalies` flags cost spikes; every decision is logged to SQLite with
-its full signal vector.
+Three **optional, training-free** add-ons sit around that core (all toggleable in
+`config/router.yaml`; the observe-then-allocate loop is always the safety net):
+
+- a **predict-then-route pre-filter** that can short-circuit obviously easy/hard
+  prompts *before* generation (a hybrid front-end — so routing is not purely
+  post-observation when it is enabled);
+- a **semantic memory** intended to skip probes on known-safe prompt clusters;
+- an **online controller** that nudges the escalation threshold from live
+  outcomes — a light, label-free adaptation (not preference-data training, but it
+  *is* state that changes over time).
+
+Honesty note (see `CHARTER.md` and `data/ablation.json`): a small on/off ablation
+found these three add-ons **accuracy-neutral and roughly cost-neutral** on a cold,
+10-prompt set — their intended savings (memory skipping probes) need a larger
+workload with repeated prompts to show up and are **not yet demonstrated at
+scale**. Treat them as hypotheses, not proven wins. `/anomalies` flags cost
+spikes; every decision is logged to SQLite with its full signal vector, now
+including a compute-cost estimate and the routing overhead.
 
 ---
 
 ## Benchmarks — reproduce everything
 
 ```bash
-PYTHONPATH=. python scripts/mtbench.py llama-3.1-8b gpt-4o     # cost-quality curve, any pair
-PYTHONPATH=. python scripts/showtime.py                        # 30-query live bill
-PYTHONPATH=. python -m app.benchmark.rigor --dataset gsm8k --n 200   # GSM8K/MMLU/traps + 95% CIs
+PYTHONPATH=. python scripts/mtbench.py llama-3.1-8b gpt-4o          # cost-quality curve (held-out headline)
+PYTHONPATH=. python scripts/mtbench_holdout.py --multiseed data/mtbench_nemotron.json  # held-out over 5 seeds, $0
+PYTHONPATH=. python scripts/showtime.py                             # 30-query live bill
+PYTHONPATH=. python scripts/rigor_multiseed.py --dataset gsm8k --n 30 --seeds 5  # 5 seeds + CIs + significance
+PYTHONPATH=. python scripts/ablation.py                             # prefilter/memory/online on-off ablation
 ```
 
 Run the tests (no keys, no network — all on the mock provider):

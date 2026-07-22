@@ -16,7 +16,8 @@ _COLUMNS = [
     "long_context", "retrieved", "verified", "escalated", "escalated_to", "models_used",
     "prefilter_route", "predicted_difficulty", "abstained", "abstain_risk",
     "u", "instability", "contradiction", "retrieval_disagreement", "evidence_sufficiency",
-    "latency_ms", "ttft_ms", "tokens_in", "tokens_out", "llm_calls", "est_cost_usd", "question",
+    "latency_ms", "ttft_ms", "tokens_in", "tokens_out", "llm_calls", "est_cost_usd",
+    "compute_units", "routing_overhead_passes", "question",
 ]
 
 # Columns added after the initial schema shipped; ALTER-ed in on startup so an
@@ -24,6 +25,7 @@ _COLUMNS = [
 _MIGRATIONS = {
     "escalated": "INTEGER", "escalated_to": "TEXT", "models_used": "TEXT",
     "prefilter_route": "TEXT", "predicted_difficulty": "REAL",
+    "compute_units": "REAL", "routing_overhead_passes": "INTEGER",
 }
 
 

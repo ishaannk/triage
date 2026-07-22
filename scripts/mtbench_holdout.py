@@ -97,7 +97,42 @@ def holdout(path: str, seed: int = 0) -> dict:
     return result
 
 
+def multiseed(path: str, seeds: int = 5) -> dict:
+    """C-5 for mtbench at ZERO cost: repeat the held-out split over several seeds
+    (from the committed rows) and report the distribution of the held-out headline.
+    Escalation is rare on MT-Bench, so the spread is the honest story."""
+    import statistics as _st
+    runs = []
+    for s in range(seeds):
+        try:
+            runs.append(holdout(path, s)["held_out_headline"])
+        except SystemExit:
+            continue
+    if not runs:
+        raise SystemExit(f"[multiseed] no seed produced a valid held-out headline for {path}")
+    cr = [r["cost_reduction_pct"] for r in runs]
+    qb = [r["quality_vs_big_pct"] for r in runs]
+    esc = [r["n_escalated"] for r in runs]
+    out = path.replace(".json", "_holdout_multiseed.json")
+    agg = {
+        "source": path, "seeds": len(runs),
+        "cost_reduction_pct": {"mean": round(_st.mean(cr), 1), "min": min(cr), "max": max(cr),
+                               "per_seed": cr},
+        "quality_vs_big_pct": {"mean": round(_st.mean(qb), 1), "min": min(qb), "max": max(qb),
+                               "per_seed": qb},
+        "n_escalated_per_test_half": {"mean": round(_st.mean(esc), 1), "per_seed": esc},
+    }
+    json.dump(agg, open(out, "w"), indent=2)
+    print(f"[multiseed] {path}: saved mean={agg['cost_reduction_pct']['mean']}% "
+          f"(range {min(cr)}-{max(cr)}), quality mean={agg['quality_vs_big_pct']['mean']}% "
+          f"(range {min(qb)}-{max(qb)}), escalations/40 {esc}  -> {out}")
+    return agg
+
+
 if __name__ == "__main__":
-    src = sys.argv[1] if len(sys.argv) > 1 else "data/mtbench_gpt4o.json"
-    sd = int(sys.argv[2]) if len(sys.argv) > 2 else 0
-    holdout(src, sd)
+    if len(sys.argv) > 1 and sys.argv[1] == "--multiseed":
+        multiseed(sys.argv[2] if len(sys.argv) > 2 else "data/mtbench_gpt4o.json")
+    else:
+        src = sys.argv[1] if len(sys.argv) > 1 else "data/mtbench_gpt4o.json"
+        sd = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+        holdout(src, sd)

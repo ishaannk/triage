@@ -32,6 +32,13 @@ class CostMetrics(BaseModel):
     tokens_out: int = 0
     est_cost_usd: float = 0.0
     llm_calls: int = 0
+    # C-10: compute-based cost alongside API dollars (a free tier hides compute,
+    # it does not remove it). prefill/decode split + a hardware-agnostic compute
+    # proxy, plus the routing overhead = extra model passes beyond one baseline.
+    prefill_tokens: int = 0
+    decode_tokens: int = 0
+    compute_units: float = 0.0           # prefill_tokens + 10*decode_tokens (decode-weighted)
+    routing_overhead_passes: int = 0     # llm_calls - 1 (signal/probe/escalation cost)
 
 
 class RouteDecision(BaseModel):

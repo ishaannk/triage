@@ -1,16 +1,20 @@
 """Triage reliability-aware router (Reliability-Conditioned Allocation).
 
-Tiers (escalating compute):
+Official tier map (fixed by the directive — do not re-open):
   0 fast    : single pass on the small model.
-  1 retrieve: when uncertainty U > tau_star and no conflict.
+  1 retrieve: when uncertainty U > tau_star AND there is no conflict.
   2 verify  : when conflicted / unstable / under-evidenced (grounding pass).
-  3 escalate: signal-driven small -> LARGE model. We run the cheap model first,
-              read its OWN proxy signals, and only trade up to a bigger model when
-              those signals say the answer is unreliable. "Big task -> big model"
-              is *observed*, not predicted by an up-front classifier.
-  4 abstain : PENDING_REVIEW when the multi-signal abstain policy fires and neither
-              a verify pass nor escalation rescued the answer.
-Tier-L (long context) is orthogonal — CRPA stub flags it and passes through.
+              Conflict goes straight here, not through retrieve.
+  3 abstain : PENDING_REVIEW when the multi-signal abstain policy fires and no
+              intervention rescued the answer.
+Tier-L (long context) is orthogonal — a detect-only flag (the real long-context
+attention primitive is not built; see app/router/longcontext.py + CHARTER.md).
+
+Model escalation (small -> LARGE) is a COSTED INTERVENTION inside the policy, not
+a tier: we run the cheap model, read its OWN proxy signals, and only trade up when
+they say the answer is unreliable. It is recorded on RouteDecision.escalated /
+escalated_to and paid for in the aggregated cost — the served tier still reflects
+the reliability level reached (0/1/2), or 3 if we ultimately abstain.
 """
 from __future__ import annotations
 
@@ -26,9 +30,9 @@ from ..verify.verify import verify
 from ..tools import calculator
 from . import memory, online, prefilter
 from .abstain import should_abstain
-from .crpa import crpa_route
+from .longcontext import long_context_route
 
-TIER_NAMES = {0: "fast", 1: "retrieve", 2: "verify", 3: "escalate", 4: "abstain"}
+TIER_NAMES = {0: "fast", 1: "retrieve", 2: "verify", 3: "abstain"}
 _ABSTAIN_MSG = (
     "I'm not confident enough to answer reliably, so this request has been routed "
     "to PENDING_REVIEW. See the signal panel for why."
@@ -48,7 +52,7 @@ def pick_model(req: ChatRequest) -> str:
 
 
 async def _assess(
-    client: LLMClient, req: ChatRequest, cfg: dict, crpa: dict, compute_full: bool
+    client: LLMClient, req: ChatRequest, cfg: dict, lc: dict, compute_full: bool
 ) -> dict:
     """Run Tier 0-2 (main pass + signals + retrieve + verify) for ONE model.
 
@@ -109,11 +113,14 @@ async def _assess(
         or signals.instability >= tcfg["instability_high"]
     )
 
-    # ---- Tier 1: retrieve ------------------------------------------------ #
+    # ---- Tier 1: retrieve (uncertain AND NOT conflicted) ----------------- #
+    # Per the fixed tier map: retrieval is for plain uncertainty. A conflict
+    # (unstable / self-contradictory) skips retrieve and goes straight to Tier 2
+    # verify below.
     tier = 0
     retrieved = False
     evidence: list = []
-    should_retrieve = (signals.uncertainty > tcfg["tau_star"]) or conflict
+    should_retrieve = (signals.uncertainty > tcfg["tau_star"]) and not conflict
     if should_retrieve:
         rc = cfg["retrieval"]
         evidence = get_store().search(req.message, top_k=rc["top_k"], min_score=rc["min_score"])
@@ -128,7 +135,7 @@ async def _assess(
                 proxy.evidence_sufficiency(evidence, rc["min_score"])
             )
 
-    # ---- Tier 2: verify (RV(k) cap + cost guard) ------------------------- #
+    # ---- Tier 2: verify (cost guard) ------------------------------------- #
     verified = False
     verify_pass = None
     verify_trigger = (
@@ -194,7 +201,7 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
 
     # ---- Tier-L: long-context (orthogonal) ------------------------------- #
     system = req.system or "You are a helpful, accurate assistant. Think step by step when the question requires reasoning, then state the final answer."
-    crpa = crpa_route(system + " " + req.message, tcfg["long_context_tokens"])
+    lc = long_context_route(system + " " + req.message, tcfg["long_context_tokens"])
 
     # ---- Tier T: deterministic tool (exact math) BEFORE any LLM spend ---- #
     # Tool-aware routing: if the request reduces to a pure math expression, the
@@ -203,7 +210,7 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
     if cfg.get("tools", {}).get("calculator", True):
         sol = calculator.solve(req.message)
         if sol["handled"]:
-            return _tool_response(req, sol, small_id, crpa, t_start)
+            return _tool_response(req, sol, small_id, lc, t_start)
 
     # ---- Tier -1: hybrid predict-then-route pre-filter ------------------- #
     mem = (
@@ -226,13 +233,13 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
     # model (no bigger model to escalate to -> resampling a slow reasoning model just
     # burns ~5x the latency/cost for nothing).
     deep = req.max_signals and not fast_path and not prefiltered_to_big
-    a = await _assess(start_client, req, cfg, crpa, deep)
+    a = await _assess(start_client, req, cfg, lc, deep)
     # Pre-filter sent us straight to the big model and it FAILED (timeout/empty):
     # fall back to the small model — a provider failure must never become an abstain.
     pf_big_failed = False
     if prefiltered_to_big and (_degenerate(a["answer"]) or start_client.provider_label == "mock"):
         fb_client = LLMClient(small_id)
-        a_small = await _assess(fb_client, req, cfg, crpa, False)
+        a_small = await _assess(fb_client, req, cfg, lc, False)
         if not _degenerate(a_small["answer"]) and fb_client.provider_label != "mock":
             pf_big_failed = True
             a = a_small
@@ -275,7 +282,7 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
         # Light assessment on the big model: we want its answer, not another escalation
         # decision (there is no bigger model). The degenerate-answer guard still catches
         # a big-model failure and abstains. This keeps escalation to ~1 big-model call.
-        b = await _assess(big_client, req, cfg, crpa, False)
+        b = await _assess(big_client, req, cfg, lc, False)
         clients.append(big_client)
         escalated = True
         escalated_to = big_id
@@ -306,12 +313,23 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
             })
 
     # ---- Aggregate cost across every model touched ----------------------- #
+    # C-10: alongside API dollars we report a compute-based measure (prefill /
+    # decode token counts -> a hardware-agnostic compute-unit proxy) and the
+    # routing overhead (extra model passes beyond one baseline pass = the price
+    # of the signal/probe/escalation machinery). Free-tier $0 hides compute; this
+    # does not.
     total = CostMetrics()
     for c in clients:
         total.tokens_in += c.cost.tokens_in
         total.tokens_out += c.cost.tokens_out
         total.est_cost_usd += c.cost.est_cost_usd
         total.llm_calls += c.cost.llm_calls
+    total.prefill_tokens = total.tokens_in
+    total.decode_tokens = total.tokens_out
+    # decode is ~an order of magnitude costlier per token than prefill on real
+    # hardware; a transparent proxy weights it accordingly.
+    total.compute_units = round(total.tokens_in + 10.0 * total.tokens_out, 1)
+    total.routing_overhead_passes = max(0, total.llm_calls - 1)
 
     signals = chosen["signals"]
     signals.detail["escalation"] = esc_detail
@@ -323,31 +341,37 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
     final_model = models_used[-1]
     used_big = escalated or prefiltered_to_big
 
+    # ---- C-8: count retrieved documents toward the long-context estimate --- #
+    if evidence and not lc["long_context"]:
+        lc = long_context_route(system + " " + req.message,
+                                tcfg["long_context_tokens"], evidence)
+
     # ---- Tier assignment + abstain --------------------------------------- #
+    # Official map: 0/1/2 reliability, 3 = abstain. Escalation is NOT a tier —
+    # it is recorded on route.escalated and paid in `total`; the served tier is
+    # the reliability level the chosen model reached (or 3 if we abstain).
     # Never serve a non-answer: if even the chosen model came back degenerate, abstain.
     if _degenerate(answer):
         would_abstain = True
     final_abstain = would_abstain
     status = "OK"
     if final_abstain:
-        tier = 4
+        tier = 3
         status = "PENDING_REVIEW"
         signals.detail["abstain"]["candidate_withheld"] = answer[:300]
         answer = _ABSTAIN_MSG
-    elif escalated:
-        tier = max(chosen["tier"], 3)
     else:
         tier = chosen["tier"]
 
     latency_ms = (time.perf_counter() - t_start) * 1000
     route = RouteDecision(
-        tier=tier, tier_name=TIER_NAMES[tier], long_context=crpa["long_context"],
+        tier=tier, tier_name=TIER_NAMES[tier], long_context=lc["long_context"],
         retrieved=chosen["retrieved"], verified=chosen["verified"],
         escalated=escalated, escalated_to=escalated_to, models_used=models_used,
         prefilter_route=pf["route"], predicted_difficulty=pf["difficulty"],
         abstained=final_abstain, abstain_risk=risk,
         reason=_reason(tier, escalated, prefiltered_to_big, chosen, final_abstain,
-                       crpa, small_id, escalated_to),
+                       lc, small_id, escalated_to),
     )
 
     # ---- Semantic memory + online-learning feedback ---------------------- #
@@ -368,7 +392,7 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
     telem = {
         "request_id": resp.request_id, "model": final_model, "provider": final_client.provider_label,
         "tier": tier, "tier_name": TIER_NAMES[tier], "status": status,
-        "long_context": crpa["long_context"], "retrieved": chosen["retrieved"],
+        "long_context": lc["long_context"], "retrieved": chosen["retrieved"],
         "verified": chosen["verified"], "escalated": escalated, "escalated_to": escalated_to,
         "models_used": ",".join(models_used),
         "prefilter_route": pf["route"], "predicted_difficulty": pf["difficulty"],
@@ -380,12 +404,14 @@ async def route_and_answer(req: ChatRequest) -> tuple[ChatResponse, dict]:
         "latency_ms": resp.latency_ms, "ttft_ms": resp.ttft_ms,
         "tokens_in": total.tokens_in, "tokens_out": total.tokens_out,
         "llm_calls": total.llm_calls, "est_cost_usd": round(total.est_cost_usd, 8),
+        "compute_units": total.compute_units,
+        "routing_overhead_passes": total.routing_overhead_passes,
         "question": req.message[:500],
     }
     return resp, telem
 
 
-def _tool_response(req, sol, small_id, crpa, t_start) -> tuple[ChatResponse, dict]:
+def _tool_response(req, sol, small_id, lc, t_start) -> tuple[ChatResponse, dict]:
     """Build the served response when the calculator tool solved the request."""
     answer = f"{sol['answer']}"
     signals = SignalSet()
@@ -393,7 +419,7 @@ def _tool_response(req, sol, small_id, crpa, t_start) -> tuple[ChatResponse, dic
                               "exact": not sol["answer"].startswith("≈")}
     reason = f"exact arithmetic via calculator tool (no LLM): {sol['expression']} = {sol['answer']}"
     route = RouteDecision(
-        tier=0, tier_name="tool", long_context=crpa["long_context"],
+        tier=0, tier_name="tool", long_context=lc["long_context"],
         retrieved=False, verified=True, escalated=False, models_used=["calculator"],
         prefilter_route="tool", predicted_difficulty=None, abstained=False,
         reason=reason, abstain_risk=0.0,
@@ -408,7 +434,7 @@ def _tool_response(req, sol, small_id, crpa, t_start) -> tuple[ChatResponse, dic
     telem = {
         "request_id": resp.request_id, "model": "calculator-tool", "provider": "tool",
         "tier": 0, "tier_name": "tool", "status": "OK",
-        "long_context": crpa["long_context"], "retrieved": False, "verified": True,
+        "long_context": lc["long_context"], "retrieved": False, "verified": True,
         "escalated": False, "escalated_to": None, "models_used": "calculator",
         "prefilter_route": "tool", "predicted_difficulty": None,
         "abstained": False, "abstain_risk": 0.0,
@@ -416,15 +442,16 @@ def _tool_response(req, sol, small_id, crpa, t_start) -> tuple[ChatResponse, dic
         "retrieval_disagreement": 0.0, "evidence_sufficiency": 1.0,
         "latency_ms": resp.latency_ms, "ttft_ms": 0.0,
         "tokens_in": 0, "tokens_out": 0, "llm_calls": 0, "est_cost_usd": 0.0,
+        "compute_units": 0.0, "routing_overhead_passes": 0,
         "question": req.message[:500],
     }
     return resp, telem
 
 
-def _reason(tier, escalated, prefiltered_to_big, chosen, abstained, crpa, small_id, big_id) -> str:
+def _reason(tier, escalated, prefiltered_to_big, chosen, abstained, lc, small_id, big_id) -> str:
     bits = []
-    if crpa["long_context"]:
-        bits.append(f"Tier-L long-context ({crpa['approx_prompt_tokens']} tok, CRPA stub)")
+    if lc["long_context"]:
+        bits.append(f"Tier-L long-context ({lc['approx_prompt_tokens']} tok, detect-only flag)")
     if abstained:
         bits.append("multi-signal risk over threshold; verify/escalation did not rescue -> abstain")
     elif prefiltered_to_big:

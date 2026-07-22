@@ -143,21 +143,39 @@ _SYS = ("You are a helpful, accurate assistant. Think step by step when the ques
         "requires reasoning, then state the final answer.")
 
 
+async def _retry(coro_fn, tries: int = 5):
+    """Retry a benchmark call on free-lane rate limits (429). Benchmark-only —
+    the production 429 UX is unchanged."""
+    from ..llm import RateLimitError
+    for i in range(tries):
+        try:
+            return await coro_fn()
+        except RateLimitError:
+            if i == tries - 1:
+                raise
+            await asyncio.sleep(22)
+    raise RuntimeError("unreachable")
+
+
 async def _single(model: str, item: dict) -> dict:
-    c = LLMClient(model)
-    r = await c.generate([{"role": "system", "content": _SYS},
-                          {"role": "user", "content": _prompt(item)}], temperature=0.2, max_tokens=1024)
-    # Baselines always answer (they cannot abstain) — the point of the trap axis.
-    return {"correct": score(item, r.text, abstained=False), "cost": c.cost.est_cost_usd,
-            "escalated": False, "abstained": False}
+    async def _call():
+        c = LLMClient(model)
+        r = await c.generate([{"role": "system", "content": _SYS},
+                              {"role": "user", "content": _prompt(item)}], temperature=0.2, max_tokens=1024)
+        # Baselines always answer (they cannot abstain) — the point of the trap axis.
+        return {"correct": score(item, r.text, abstained=False), "cost": c.cost.est_cost_usd,
+                "escalated": False, "abstained": False}
+    return await _retry(_call)
 
 
 async def _triage(small: str, big: str, item: dict) -> dict:
-    resp, _ = await route_and_answer(
-        ChatRequest(message=_prompt(item), model=small, escalate_to=big, max_signals=True))
-    return {"correct": score(item, resp.answer, resp.route.abstained), "cost": resp.cost.est_cost_usd,
-            "escalated": resp.route.escalated, "tier": resp.route.tier_name,
-            "abstained": resp.route.abstained}
+    async def _call():
+        resp, _ = await route_and_answer(
+            ChatRequest(message=_prompt(item), model=small, escalate_to=big, max_signals=True))
+        return {"correct": score(item, resp.answer, resp.route.abstained), "cost": resp.cost.est_cost_usd,
+                "escalated": resp.route.escalated, "tier": resp.route.tier_name,
+                "abstained": resp.route.abstained}
+    return await _retry(_call)
 
 
 def _ci(vals: list[float], b: int = 2000) -> tuple[float, float]:
@@ -179,6 +197,27 @@ def _agg(rows: list[dict]) -> dict:
         "escalation_rate": round(st.mean([int(r.get("escalated", False)) for r in rows]), 3),
         "abstain_rate": round(st.mean([int(r.get("abstained", False)) for r in rows]), 3),
     }
+
+
+def _paired_bootstrap(a: list[float], b: list[float], n_boot: int = 2000, seed: int = 0) -> dict:
+    """Paired bootstrap significance for mean(a) - mean(b) on the same items.
+    Returns the observed difference, its 95% CI, and a two-sided bootstrap
+    p-value (fraction of resamples on the far side of zero, doubled)."""
+    n = len(a)
+    if n == 0 or n != len(b):
+        return {"mean_diff": 0.0, "ci95": [0.0, 0.0], "p_two_sided": 1.0, "significant_at_0.05": False}
+    rng = random.Random(seed)
+    obs = sum(a) / n - sum(b) / n
+    diffs = []
+    for _ in range(n_boot):
+        idx = [rng.randrange(n) for _ in range(n)]
+        diffs.append(sum(a[i] for i in idx) / n - sum(b[i] for i in idx) / n)
+    diffs.sort()
+    lo, hi = diffs[int(0.025 * n_boot)], diffs[int(0.975 * n_boot)]
+    frac_le0 = sum(1 for d in diffs if d <= 0) / n_boot
+    p = 2 * min(frac_le0, 1 - frac_le0)
+    return {"mean_diff": round(obs, 4), "ci95": [round(lo, 4), round(hi, 4)],
+            "p_two_sided": round(p, 4), "significant_at_0.05": bool(p < 0.05)}
 
 
 def quality_metrics(small_acc: float, big_acc: float, router_acc: float) -> tuple[float, float | None]:
@@ -226,6 +265,14 @@ async def run(dataset: str, n: int, small: str, big: str, concurrency: int, out:
     sa, ba, va = (configs[k]["accuracy"] for k in ("always_small", "always_big", "triage"))
     qvb, qrec = quality_metrics(sa, ba, va)
     sb, bb = configs["triage"]["total_cost_usd"], configs["always_big"]["total_cost_usd"]
+    # C-5: per-item arrays (for pooled significance across seeds) + significance tests.
+    s_acc, b_acc, v_acc = ([x["correct"] for x in L] for L in (S, B, V))
+    b_cost, v_cost = ([x["cost"] for x in L] for L in (B, V))
+    significance = {
+        "triage_vs_big_accuracy": _paired_bootstrap(v_acc, b_acc),
+        "triage_vs_small_accuracy": _paired_bootstrap(v_acc, s_acc),
+        "triage_vs_big_cost": _paired_bootstrap(v_cost, b_cost),
+    }
     result = {
         "dataset": dataset, "n": n, "small_model": small, "big_model": big,
         "configs": configs,
@@ -235,6 +282,9 @@ async def run(dataset: str, n: int, small: str, big: str, concurrency: int, out:
             "quality_recovered_pct": qrec,
             "triage_escalation_rate": configs["triage"]["escalation_rate"],
         },
+        "significance": significance,
+        "per_item": {"small_correct": s_acc, "big_correct": b_acc, "triage_correct": v_acc,
+                     "big_cost": b_cost, "triage_cost": v_cost},
     }
     json.dump(result, open(out, "w"), indent=2)
     print("\n===== RIGOR RESULT =====")
@@ -243,6 +293,9 @@ async def run(dataset: str, n: int, small: str, big: str, concurrency: int, out:
               f"mean_cost=${c['mean_cost_usd']:.7f} CI{c['mean_cost_ci95']} "
               f"total=${c['total_cost_usd']:.5f} esc={c['escalation_rate']} abstain={c['abstain_rate']}")
     print(f"  HEADLINE {result['headline']}")
+    for name, s in significance.items():
+        print(f"  SIG {name}: diff={s['mean_diff']} CI{s['ci95']} p={s['p_two_sided']} "
+              f"{'*' if s['significant_at_0.05'] else 'ns'}")
     print(f"  -> {out}")
     return result
 
