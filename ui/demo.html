@@ -143,11 +143,14 @@
 
   <!-- ===== CURVE ===== -->
   <section>
-    <div class="eyebrow">measured on mt-bench · 80 questions</div>
-    <h2 id="curveTitle">95.3% cost cut. Quality above the paid model.</h2>
-    <p class="lede">One point per escalation threshold. The ringed point is the operating point:
-      only the questions where the free model <em>actually failed</em> (judge score 1/10) were
-      escalated — and fixing exactly those pushed overall quality past always-paid.</p>
+    <div class="eyebrow">measured on mt-bench · 80 questions · in-sample sweep</div>
+    <h2 id="curveTitle">Big cost cut at near-paid quality.</h2>
+    <p class="lede">One point per escalation threshold — this whole curve is the
+      <em>in-sample</em> sweep across all 80 questions. Headline numbers are reported
+      on a <b>held-out test split</b> (below): Nemotron-Nano-9B → GPT-4o holds
+      82% saved at ~101% of GPT-4o quality (wide CI); the Ministral pair barely
+      escalates on held-out, so it is really "the free model alone at ~99% of
+      GPT-4o quality." No tuning on the test set.</p>
     <figure class="card chart-card">
       <img class="theme-light-only" src="/ui/assets/curve_light.svg" alt="Cost-quality curve, light theme">
       <img class="theme-dark-only" src="/ui/assets/curve_dark.svg" alt="Cost-quality curve, dark theme">
@@ -182,7 +185,7 @@
     <h2>Observe, then spend.</h2>
     <div class="loop">
       <div class="step stop"><div class="n">1</div><div><div class="t">Free model answers</div><div class="d">One pass on the open-source model. Token <code>logprobs</code> give an uncertainty signal at zero extra cost. Pure arithmetic never reaches an LLM — a calculator tool answers exactly, for free.</div></div></div>
-      <div class="step stop"><div class="n">2</div><div><div class="t">Confident → ship it</div><div class="d">Low uncertainty ends the request here. This is the 80–95% case, and it costs $0.</div></div></div>
+      <div class="step stop"><div class="n">2</div><div><div class="t">Confident → ship it</div><div class="d">Low uncertainty ends the request here. Measured across our runs this is 42–95% of requests (escalation rate 5–58%), and it costs $0.</div></div></div>
       <div class="step"><div class="n">3</div><div><div class="t">Elevated → measure deeper</div><div class="d">Resample agreement · self-check · retrieved evidence. Expensive signals run only when the free one is already suspicious.</div></div></div>
       <div class="step"><div class="n">4</div><div><div class="t">Proven risky → your paid model</div><div class="d">Cheapest fix first: retrieve → verify (can revise) → escalate to the model you chose for hard tasks.</div></div></div>
       <div class="step abst"><div class="n">5</div><div><div class="t">Unanswerable → refuse</div><div class="d">If combined risk stays high, Triage returns <code>PENDING_REVIEW</code> instead of a confident hallucination.</div></div></div>
@@ -192,9 +195,10 @@
   <footer>
     <h3>All truth — what these numbers are</h3>
     <ul>
-      <li><span class="flag">MEASURED</span> — MT-Bench: 80 lm-sys questions (first turns), free small model vs paid model, both answers scored 1–10 by an LLM judge (gpt-4o-mini), escalation threshold swept. Headline pair Ministral-8B → GPT-4o: 95.3% saved at 100.3% quality (<code>data/mtbench_gpt4o.json</code>). Second pair Nemotron-Nano-9B → GPT-4o: 78.6% saved at 103.8% quality, 16% escalated (<code>data/mtbench_nemotron.json</code>).</li>
+      <li><span class="flag">MEASURED</span> — MT-Bench: 80 lm-sys questions (first turns), free small model vs paid model, both answers scored 1–10 by an LLM judge (gpt-4o-mini), escalation threshold swept. Headlines are reported on a <b>held-out test split</b> (threshold picked on a tuning half, never tuned on test). Nemotron-Nano-9B → GPT-4o: <b>82.0% saved (CI 67–95%) at 101.2% quality (CI 96–108%)</b>, 6/40 escalated (<code>data/mtbench_nemotron_holdout.json</code>). Ministral-8B → GPT-4o: at the tuned threshold 0/40 test questions escalated → ~$0 at 99.4% of GPT-4o quality, CI 93–105% (<code>data/mtbench_gpt4o_holdout.json</code>).</li>
       <li><span class="flag">MEASURED</span> — 30-query bill: real OpenAI charges, July 2026 list prices. Raw data: <code>data/showtime.json</code>.</li>
-      <li><span class="flag">LIMITS</span> — single runs; LLM-judge scores carry noise; free-lane models run on provider free tiers (you pay $0, subject to their rate limits).</li>
+      <li><span class="flag">NEGATIVES</span> — reported, not buried: a GSM8K run over-escalated to 51.1% accuracy (<code>data/rigor_gsm8k.json</code>); after the fix it matched the small model but cost 29.1% more than always-big (<code>data/rigor_gsm8k_fixed.json</code>). Scope is written down in <code>CHARTER.md</code>.</li>
+      <li><span class="flag">LIMITS</span> — the curve chart is a single in-sample run; escalation is rare on MT-Bench so held-out CIs are wide; LLM-judge scores carry noise; free-lane models run on provider free tiers (you pay $0, subject to their rate limits).</li>
       <li><span class="flag">REPRODUCE</span> — <code>python scripts/mtbench.py</code> · <code>python scripts/showtime.py</code> — with any model pair you pick.</li>
     </ul>
   </footer>
@@ -211,9 +215,9 @@ btn.onclick = () => {
 
 // Headline tiles — real measured numbers (see footer for provenance).
 document.getElementById('tiles').innerHTML = [
-  {big:'95.3%', lbl:'cost cut on MT-Bench at 100.3% of the paid model’s quality', hero:true},
-  {big:'5%', lbl:'of MT-Bench questions actually needed the paid model'},
+  {big:'82%', lbl:'saved on MT-Bench held-out (Nemotron-9B → GPT-4o) at ~101% of GPT-4o quality — CI wide', hero:true},
   {big:'69.5%', lbl:'saved on a 30-query mixed live bill ($0.0637 → $0.0195)'},
   {big:'24 / 30', lbl:'answers that cost exactly $0 (free model, calculator, retrieval)'},
+  {big:'held-out', lbl:'headline threshold picked on a tuning half, reported on the untouched half — never tuned on test'},
 ].map(t=>`<div class="tile ${t.hero?'hero-tile':''}"><div class="big num">${t.big}</div><div class="lbl">${t.lbl}</div></div>`).join('');
 </script>

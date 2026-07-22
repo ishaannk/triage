@@ -39,7 +39,7 @@ themes = {
 for mode, c in themes.items():
     s = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">']
     s.append(f'<text x="{L}" y="24" font-size="15" font-weight="600" fill="{c["ink"]}">Triage on MT-Bench — cost reduction vs quality</text>')
-    s.append(f'<text x="{L}" y="42" font-size="12" fill="{c["ink2"]}">{pair} · 80 questions · LLM-judge · one point per escalation threshold</text>')
+    s.append(f'<text x="{L}" y="42" font-size="12" fill="{c["ink2"]}">{pair} · 80 questions · LLM-judge · in-sample threshold sweep (headline reported on a held-out split)</text>')
     for v in range(y0, y1 + 1, 2):
         s.append(f'<line x1="{L}" y1="{Y(v)}" x2="{W-R}" y2="{Y(v)}" stroke="{c["grid"]}" stroke-width="1"/>')
         s.append(f'<text x="{L-8}" y="{Y(v)+4}" font-size="11" text-anchor="end" fill="{c["ink2"]}">{v}%</text>')
@@ -56,7 +56,7 @@ for mode, c in themes.items():
         s.append(f'<circle cx="{X(x):.1f}" cy="{Y(y):.1f}" r="4" fill="{BLUE}"/>')
     hx, hy = X(head[0]), Y(head[1])
     s.append(f'<circle cx="{hx}" cy="{hy}" r="6.5" fill="none" stroke="{BLUE}" stroke-width="2"/>')
-    s.append(f'<text x="{hx-10}" y="{hy-12}" font-size="11.5" font-weight="600" text-anchor="end" fill="{c["ink"]}">{head[0]}% saved · {head[1]}% quality</text>')
+    s.append(f'<text x="{hx-10}" y="{hy-12}" font-size="11.5" font-weight="600" text-anchor="end" fill="{c["ink"]}">{head[0]}% saved · {head[1]}% quality (in-sample)</text>')
     s.append("</svg>")
     svg = "\n".join(s)
     for out in (f"docs/assets/mtbench_curve_{mode}.svg", f"ui/assets/curve_{mode}.svg"):

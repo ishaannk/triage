@@ -34,7 +34,7 @@
       "total_cost_usd": 0.003386,
       "escalation_rate": 0
     },
-    "svserve": {
+    "triage": {
       "n": 30,
       "accuracy": 0.8667,
       "accuracy_ci95": [
@@ -52,7 +52,9 @@
   },
   "headline": {
     "cost_savings_vs_big_pct": -29.1,
-    "quality_recovered_pct": 0,
-    "svserve_escalation_rate": 0.133
-  }
+    "quality_vs_big_pct": 92.9,
+    "quality_recovered_pct": 0.0,
+    "triage_escalation_rate": 0.133
+  },
+  "note": "NEGATIVE RESULT \u2014 published on purpose. After the over-escalation fix the router matched the small model's accuracy (86.7%) but on this 30-item sample it cost 29.1% MORE than always-big, because escalations (13.3%) added big-model spend without lifting accuracy. Honest quality_vs_big_pct = 92.9%. Models ministral-8b/gpt-oss-120b are now retired from the catalog."
 }

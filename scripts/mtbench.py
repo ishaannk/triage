@@ -44,7 +44,8 @@ def load_questions() -> list[dict]:
     return [{"id": q["question_id"], "cat": q["category"], "q": q["turns"][0]} for q in rows]
 
 
-async def judge_score(q: str, a: str) -> float:
+async def judge_score(q: str, a: str) -> tuple[float, float]:
+    """Returns (score_1_to_10, judge_cost_usd)."""
     if not (a or "").strip():
         return (1.0, 0.0)
     c = LLMClient(JUDGE)
@@ -110,6 +111,25 @@ async def main():
     ok = [p for p in curve if p["quality_vs_big_pct"] >= 95.0]
     best = max(ok, key=lambda p: p["cost_reduction_pct"]) if ok else None
 
+    # HONEST headline: never tune on the test set. Split 50/50 (seeded), pick the
+    # threshold on the tuning half, report the operating point on the untouched
+    # test half with bootstrap 95% CIs. `best` above stays as the in-sample curve
+    # reference only. See scripts/mtbench_holdout.py.
+    from scripts.mtbench_holdout import pick_threshold, _point, _bootstrap_ci
+    import random as _random
+    _order = sorted(range(len(rows)), key=lambda i: rows[i]["id"])
+    _random.Random(0).shuffle(_order)
+    _half = len(_order) // 2
+    _tune = [rows[i] for i in _order[:_half]]
+    _test = [rows[i] for i in _order[_half:]]
+    _chosen = pick_threshold(_tune)
+    heldout = None
+    if _chosen is not None:
+        heldout = {**_point(_test, _chosen["threshold"]),
+                   **_bootstrap_ci(_test, _chosen["threshold"], 0),
+                   "tuned_threshold": _chosen["threshold"], "seed": 0,
+                   "n_tune": len(_tune), "n_test": len(_test)}
+
     print("\n========== MT-BENCH COST-QUALITY CURVE ==========")
     print(f"  always-big  quality={big_q:.2f}/10  cost=${total_big:.4f}")
     print(f"  always-small quality={small_q:.2f}/10  cost=$0 (open-source)")
@@ -120,17 +140,21 @@ async def main():
               f"${p['cost_usd']:>8.4f} {p['cost_reduction_pct']:>6.1f}% "
               f"{p['quality']:>6.2f} {p['quality_vs_big_pct']:>7.1f}%{mark}")
     if best:
-        print(f"\n  HEADLINE: {best['cost_reduction_pct']}% cost reduction at "
+        print(f"\n  IN-SAMPLE curve reference: {best['cost_reduction_pct']}% cost reduction at "
               f"{best['quality_vs_big_pct']}% of {BIG} quality "
               f"(threshold={best['threshold']}, escalation={best['escalation_rate']*100:.0f}%)")
-        print(f"  RouteLLM claims: up to 85% at 95% -> we {'BEAT' if best['cost_reduction_pct'] > 85 else 'are at'} "
-              f"{best['cost_reduction_pct']}%")
+    if heldout:
+        print(f"  HELD-OUT HEADLINE (honest): {heldout['cost_reduction_pct']}% saved "
+              f"(CI {heldout['cost_reduction_ci95']}) at {heldout['quality_vs_big_pct']}% of {BIG} quality "
+              f"(CI {heldout['quality_vs_big_ci95']}), {heldout['n_escalated']}/{heldout['n']} escalated "
+              f"[threshold {heldout['tuned_threshold']} picked on the tuning half]")
     print(f"  (judge spend this run: ${judge_spend:.4f})")
 
     json.dump({"n": len(rows), "small": SMALL, "big": BIG, "judge": JUDGE,
                "always_big": {"quality": round(big_q, 3), "cost_usd": round(total_big, 5)},
                "always_small_quality": round(small_q, 3),
-               "curve": curve, "headline": best, "rows": rows},
+               "curve": curve, "in_sample_headline": best, "held_out_headline": heldout,
+               "rows": rows},
               open("data/mtbench_curve.json", "w"), indent=2)
     print("  -> data/mtbench_curve.json")
 

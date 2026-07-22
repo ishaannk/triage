@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="860" height="430" viewBox="0 0 860 430" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <text x="70" y="24" font-size="15" font-weight="600" fill="#e6edf3">Triage on MT-Bench — cost reduction vs quality</text>
-<text x="70" y="42" font-size="12" fill="#8b949e">free Ministral-8B → GPT-4o (headline pair) · 80 questions · LLM-judge · one point per escalation threshold</text>
+<text x="70" y="42" font-size="12" fill="#8b949e">free Ministral-8B → GPT-4o · 80 questions · LLM-judge · in-sample threshold sweep (headline reported on a held-out split)</text>
 <line x1="70" y1="376.0" x2="836" y2="376.0" stroke="#30363d" stroke-width="1"/>
 <text x="62" y="380.0" font-size="11" text-anchor="end" fill="#8b949e">94%</text>
 <line x1="70" y1="298.0" x2="836" y2="298.0" stroke="#30363d" stroke-width="1"/>
@@ -36,5 +36,5 @@
 <circle cx="773.4" cy="130.3" r="4" fill="#4269d0"/>
 <circle cx="817.3" cy="270.7" r="4" fill="#4269d0"/>
 <circle cx="773.4121951219512" cy="130.30000000000013" r="6.5" fill="none" stroke="#4269d0" stroke-width="2"/>
-<text x="763.4121951219512" y="118.30000000000013" font-size="11.5" font-weight="600" text-anchor="end" fill="#e6edf3">95.3% saved · 100.3% quality</text>
+<text x="763.4121951219512" y="118.30000000000013" font-size="11.5" font-weight="600" text-anchor="end" fill="#e6edf3">95.3% saved · 100.3% quality (in-sample)</text>
 </svg>

@@ -12,17 +12,33 @@ not hallucinated.</p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/mtbench_curve_dark.svg">
-  <img src="docs/assets/mtbench_curve_light.svg" alt="MT-Bench cost-quality curve: 95.3% cost reduction at 100.3% of the paid model's quality.">
+  <img src="docs/assets/mtbench_curve_light.svg" alt="MT-Bench cost-quality curve — the in-sample threshold sweep across all 80 questions. Headline numbers below are reported on a held-out test split.">
 </picture>
 
-**Measured, not estimated** — real API bills, raw per-query receipts in `data/`:
+**Measured, not estimated** — real API bills, raw per-query receipts in `data/`.
+Headline MT-Bench numbers are reported on a **held-out test split** (threshold
+chosen on a tuning half, reported on the untouched half — never tuned on test),
+with bootstrap 95% CIs:
 
 | Result | Number | Where |
 |---|---|---|
-| MT-Bench, free Ministral-8B → GPT-4o | **95.3% saved** at **100.3%** of GPT-4o quality (5% escalated) | `data/mtbench_gpt4o.json` |
-| MT-Bench, free Nemotron-Nano-9B → GPT-4o | **78.6% saved** at **103.8%** of GPT-4o quality (16% escalated) | `data/mtbench_nemotron.json` |
-| 30-query mixed live bill | **69.5% saved** ($0.0637 → $0.0195) | `data/showtime.json` |
-| Answers that cost exactly $0 | **24 / 30** | same run |
+| MT-Bench, free Nemotron-Nano-9B → GPT-4o **(held-out)** | **82.0% saved** (CI 67–95%) at **101.2%** of GPT-4o quality (CI 96–108%), 6/40 escalated | `data/mtbench_nemotron_holdout.json` |
+| MT-Bench, free Ministral-8B → GPT-4o **(held-out)** | at the tuned threshold **0/40** test questions escalated → **~$0** at **99.4%** of GPT-4o quality (CI 93–105%) | `data/mtbench_gpt4o_holdout.json` |
+| 30-query mixed live bill | **69.5% saved** ($0.0637 → $0.0195), 24/30 answers cost $0 | `data/showtime.json` |
+
+**Negative results (published on purpose — see `CHARTER.md`):**
+
+| Negative | What happened | Where |
+|---|---|---|
+| GSM8K over-escalation | router escalated 57.8% and **fell to 51.1%** accuracy (56.1% of GPT-style big quality) while both baselines held ~91–93% | `data/rigor_gsm8k.json` |
+| GSM8K after the fix | accuracy recovered to the small model's 86.7%, but on that sample it **cost 29.1% MORE** than always-big | `data/rigor_gsm8k_fixed.json` |
+
+> The old README claimed "95.3% saved at 100.3% quality" for the Ministral pair.
+> That point was chosen by sweeping the threshold on the same 80 questions it was
+> reported on. On a held-out split it does **not** survive: escalation is so rare
+> on MT-Bench that the result is really "the free small model alone retains ~99%
+> of GPT-4o quality," with a wide CI. The Nemotron pair, which escalates more,
+> holds up. See the note in `scripts/mtbench_holdout.py`.
 
 ---
 
@@ -58,7 +74,7 @@ with the measured numbers.
 ```
 request ─► calculator tool ── exact arithmetic → exact answer, $0, no LLM
         └► FREE small model ── one pass + free logprob uncertainty
-              │ confident → ship it            (the 80–95% case, $0)
+              │ confident → ship it            (measured 42–95% of requests, $0)
               │ suspicious → deeper signals: resample agreement · self-check · evidence
               │ risky → retrieve → verify (can revise) → escalate to YOUR paid model
               └ unanswerable → PENDING_REVIEW  (refuse, never confabulate)
@@ -84,17 +100,29 @@ PYTHONPATH=. python scripts/showtime.py                        # 30-query live b
 PYTHONPATH=. python -m app.benchmark.rigor --dataset gsm8k --n 200   # GSM8K/MMLU/traps + 95% CIs
 ```
 
+Run the tests (no keys, no network — all on the mock provider):
+
+```bash
+pip install -r requirements-dev.txt
+PYTHONPATH=. pytest -q      # abstain invariant, tier routes, verify parser, scoring, honest-metric guard
+```
+
 The MT-Bench script makes **one paid pass per question**, then sweeps the
-escalation threshold offline — the whole curve costs one run. The rigor harness
+escalation threshold offline — the whole curve costs one run. It splits the
+questions 50/50, picks the threshold on the **tuning** half, and reports the
+headline on the untouched **test** half (`scripts/mtbench_holdout.py`
+regenerates that split from committed receipts, no new spend). The rigor harness
 adds bootstrap confidence intervals and an unanswerable-traps set for the
 abstain axis.
 
-*Fine print (all truth):* single runs; the judge is gpt-4o-mini scoring 1–10;
-first turns only; free-lane models run on provider free tiers. At "never
-escalate" the free model alone held 96.7% of GPT-4o quality on MT-Bench — the
-benchmark is partly saturated for modern small models, so the headline is the
-≥95%-quality operating point, and the raw per-question scores are all in the
-JSON for you to check.
+*Fine print (all truth):* the curve above is a single in-sample run; the judge is
+gpt-4o-mini scoring 1–10; first turns only; free-lane models run on provider free
+tiers. MT-Bench is partly saturated for modern small models — at "never escalate"
+the free model alone held 96.7% of GPT-4o quality — so escalation is rare and the
+held-out CIs are wide (few escalations per test half). The verify cost guard uses
+a **configured** per-pass overhead (`verify.overhead_tokens`), calibratable from
+telemetry via `python -m app.benchmark.verify_overhead`; it is a default, not a
+per-request measurement. Raw per-question scores are all in the JSON to check.
 
 ---
 
@@ -163,4 +191,9 @@ through the UI.
 - **Black-box only** : logprobs + resampling; no weights, no attention hooks.
 - **Mock-first** : runs end-to-end with zero keys.
 - **All truth** : published numbers are measured bills with raw receipts
-  committed; negative results get reported, not buried.
+  committed; headlines are reported on a held-out split, never tuned on test;
+  negative results get reported, not buried (see the GSM8K rows above and the two
+  `data/rigor_gsm8k*.json` files).
+- **Scope is chartered** : Triage is a deliberate text-only, API-cost pivot of a
+  broader plan; what is in and out of scope is written down in
+  [`CHARTER.md`](CHARTER.md).

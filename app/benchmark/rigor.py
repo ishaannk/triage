@@ -181,6 +181,25 @@ def _agg(rows: list[dict]) -> dict:
     }
 
 
+def quality_metrics(small_acc: float, big_acc: float, router_acc: float) -> tuple[float, float | None]:
+    """Honest quality reporting the raw rows can never contradict.
+
+    Returns (quality_vs_big_pct, quality_recovered_pct):
+      - quality_vs_big_pct : router accuracy as a % of the big-model ceiling
+        (va / ba). Always well-defined; < 100 when the router is worse, > 100
+        when it beats the big model. This is the primary quality number.
+      - quality_recovered_pct : fraction of the small->big accuracy GAP the
+        router recovers. Only meaningful when big > small; it is NOT floored at
+        100 and NOT clamped at 0 (so a run that halves accuracy shows a negative
+        recovery, never a fake 100%). Returns None when big <= small, because
+        there is no positive gap to recover on that sample.
+    """
+    qvb = round(router_acc / big_acc * 100, 1) if big_acc else 0.0
+    gap = big_acc - small_acc
+    qrec = None if gap <= 0 else round((router_acc - small_acc) / gap * 100, 1)
+    return qvb, qrec
+
+
 _LOADERS = {"gsm8k": load_gsm8k, "mmlu": load_mmlu, "traps": load_traps}
 
 
@@ -205,14 +224,14 @@ async def run(dataset: str, n: int, small: str, big: str, concurrency: int, out:
     await asyncio.gather(*(work(i, it) for i, it in enumerate(items)))
     configs = {"always_small": _agg(S), "always_big": _agg(B), "triage": _agg(V)}
     sa, ba, va = (configs[k]["accuracy"] for k in ("always_small", "always_big", "triage"))
-    gap = ba - sa
-    qrec = 100.0 if gap <= 0 else round(max(0, min(1, (va - sa) / gap)) * 100, 1)
+    qvb, qrec = quality_metrics(sa, ba, va)
     sb, bb = configs["triage"]["total_cost_usd"], configs["always_big"]["total_cost_usd"]
     result = {
         "dataset": dataset, "n": n, "small_model": small, "big_model": big,
         "configs": configs,
         "headline": {
             "cost_savings_vs_big_pct": round((1 - sb / bb) * 100, 1) if bb else 0,
+            "quality_vs_big_pct": qvb,
             "quality_recovered_pct": qrec,
             "triage_escalation_rate": configs["triage"]["escalation_rate"],
         },

@@ -138,8 +138,11 @@ async def _assess(
     )
     # verify_cost_multiplier guard: skip verify when the answer is so long that a
     # grounding pass would cost more than cost_multiplier_cap x the main pass.
+    # The per-pass overhead is a CONFIGURED value (verify.overhead_tokens), not a
+    # magic constant in the scheduler — calibrate it from telemetry.
     cost_cap = vcfg.get("cost_multiplier_cap", 1e9)
-    projected_verify_mult = (main_tokens + 400) / main_tokens  # verify prompt+answer ~ main + 400
+    verify_overhead = vcfg.get("overhead_tokens", 400)
+    projected_verify_mult = (main_tokens + verify_overhead) / main_tokens
     if verify_trigger and projected_verify_mult <= cost_cap and vcfg.get("max_rounds", 1) >= 1:
         if not retrieved:
             rc = cfg["retrieval"]

@@ -62,16 +62,21 @@ escalation:
   # Kept SELECTIVE on purpose: escalating too often makes Triage cost more than
   # always-big (we pay small+big). The value is escalating only the hard minority.
   risk_high: 0.55
-  max_escalations: 1             # RV(k)-style cap: how many times we may trade up
+  max_escalations: 1             # hard cap on how many times we may trade up (small -> big)
 
 # Deterministic tools that answer BEFORE any model call (tool-aware routing).
 tools:
   calculator: true               # exact arithmetic / roots / powers, ~zero cost
 
-# Retrieve/verify loop caps and cost guard (RV(k) + verify_cost_multiplier).
+# Retrieve/verify loop caps and cost guard.
 verify:
-  max_rounds: 1                  # RV(k): cap on retrieve->verify rounds per request
-  cost_multiplier_cap: 6.0       # skip verify if projected verify tokens > cap x main-pass tokens
+  max_rounds: 1                  # cap on retrieve->verify rounds per request
+  # cost guard: skip verify if projected verify tokens > cap x main-pass tokens.
+  cost_multiplier_cap: 6.0
+  # extra tokens a verify pass adds over the main pass, used by the cost guard.
+  # This is a CONFIGURED default, not a per-request measurement; calibrate it from
+  # telemetry with:  python -m app.benchmark.verify_overhead
+  overhead_tokens: 400
 
 # -------------------------------------------------------------------------
 # Tier -1: HYBRID PREDICT-THEN-ROUTE PRE-FILTER.

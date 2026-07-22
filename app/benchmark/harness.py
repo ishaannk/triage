@@ -128,9 +128,12 @@ async def run_benchmark(
             "always_big_accuracy": ab["accuracy"],
             "always_small_accuracy": configs["always_small"]["accuracy"],
             "triage_escalation_rate": round(svg["escalations"] / n, 3),
-            "quality_recovered_pct": _quality_recovered(
+            "quality_vs_big_pct": _quality_metrics(
                 configs["always_small"]["accuracy"], ab["accuracy"], svg["accuracy"]
-            ),
+            )[0],
+            "quality_recovered_pct": _quality_metrics(
+                configs["always_small"]["accuracy"], ab["accuracy"], svg["accuracy"]
+            )[1],
         },
         "per_case": [
             {"q": c["q"], "answerable": c["answerable"],
@@ -142,9 +145,13 @@ async def run_benchmark(
     }
 
 
-def _quality_recovered(small_acc: float, big_acc: float, sv_acc: float) -> float:
-    """What fraction of the small->big accuracy gap Triage recovers (0..100%)."""
-    gap = big_acc - small_acc
-    if gap <= 0:
-        return 100.0
-    return round(max(0.0, min(1.0, (sv_acc - small_acc) / gap)) * 100, 1)
+def _quality_metrics(small_acc: float, big_acc: float, sv_acc: float):
+    """Honest quality reporting (see app.benchmark.rigor.quality_metrics).
+
+    Returns (quality_vs_big_pct, quality_recovered_pct). The recovered figure is
+    the fraction of the small->big gap Triage recovers, NOT floored at 100 and
+    NOT clamped at 0, and None when big <= small — so a run that lowers accuracy
+    can never masquerade as '100% quality recovered'.
+    """
+    from .rigor import quality_metrics
+    return quality_metrics(small_acc, big_acc, sv_acc)

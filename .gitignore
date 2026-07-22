@@ -18,7 +18,9 @@ nohup.out
 
 # internal-only brief — never publish
 SV-Serve_assumptions_and_instructions.pdf
+SV-Serve_Required_Changes_and_Untouched_Areas.docx
 *.pdf
+*.docx
 
 # local working files
 image*.png
